@@ -1,4 +1,4 @@
-import { getRedisClient } from '@configs/redisConfig';
+import { getRedisClient } from '@shared/configs/redisConfig';
 
 const redisClient = getRedisClient();
 
