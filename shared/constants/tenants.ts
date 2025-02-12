@@ -1,4 +1,4 @@
-import { Tenant } from "@src/domain/entities/Tenant";
+import { Tenant } from "@shared/domain/entities/Tenant";
 
   // Export the TENANTS constant as an array of tenant objects
   export const TENANTS: Tenant[] = [

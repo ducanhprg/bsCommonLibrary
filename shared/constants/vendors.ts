@@ -1,4 +1,4 @@
-import { Vendor } from "@src/domain/entities/Vendor";
+import { Vendor } from "@shared/domain/entities/Vendor";
 
   // Export the VENDORS constant as an array of vendor objects
   export const VENDORS: Vendor[] = [

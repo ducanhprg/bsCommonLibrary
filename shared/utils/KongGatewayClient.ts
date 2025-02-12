@@ -1,4 +1,4 @@
-import { createAxiosClient, executeRequest } from '@configs/kongGatewayConfig';
+import { createAxiosClient, executeRequest } from '@shared/configs/kongGatewayConfig';
 
 class KongGatewayClient {
     private client = createAxiosClient();
