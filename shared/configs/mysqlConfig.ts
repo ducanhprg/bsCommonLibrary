@@ -11,7 +11,7 @@ export const mainDataSource = new DataSource({
   database: process.env.MAIN_DB_NAME || 'main_db',
   synchronize: false, // Disable in production
   logging: false,
-  entities: ['src/infrastructure/database/main/entities/**/*.ts'],
+  entities: ['src/infrastructure/database/main/models/**/*.ts'],
   extra: {
     connectionLimit: 10, // Connection pool size
   },
