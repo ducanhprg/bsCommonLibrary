@@ -26,3 +26,5 @@ export const waitForKey = async (key: string, timeout = 10000, interval = 100): 
 export const getHashByKey = async (key: string): Promise<{ [key: string]: string } | null> => {
     return redisClient.hgetall(key);
 }
+
+export default redisClient;
