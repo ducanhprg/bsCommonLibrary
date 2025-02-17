@@ -173,13 +173,15 @@ export const getAllNestedChildDetails = async (key: string, depth = 3): Promise<
         const keys = descendants[level].map(id => `${key.split(":")[0]}:${id}`);
         const pipeline = redisClient.pipeline();
 
-        for (const key of keys) {
-            pipeline.hgetall(key);
+        for (const redisKey of keys) {
+            pipeline.hgetall(redisKey);
         }
 
         const details = await pipeline.exec();
-        result[level] = details.map(([err, data]) => data);
+
+        result[level] = details ? details.map(([err, data]) => (data ? data : {})) : [];
     }
 
     return result;
 };
+

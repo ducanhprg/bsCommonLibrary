@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { DataSource, DataSourceOptions } from 'typeorm';
-import { getCache, setCache } from '@shared/utils/RedisClient';
+import { getDataByKey, setDataByKey } from '@shared/utils/RedisClient';
 
 export const mainDataSource = new DataSource({
   type: 'mysql',
@@ -33,7 +33,7 @@ const multiTenantBaseConfig: DataSourceOptions = {
 
 export const getTenantDataSource = async (vendorDatabase: string): Promise<DataSource> => {
   const cacheKey = `tenant:${vendorDatabase}`;
-  const cachedDataSourceOptions = await getCache(cacheKey);
+  const cachedDataSourceOptions = await getDataByKey(cacheKey);
 
   if (cachedDataSourceOptions) {
     console.log(`Using cached configuration for tenant: ${vendorDatabase}`);
@@ -57,7 +57,7 @@ export const getTenantDataSource = async (vendorDatabase: string): Promise<DataS
 
   console.log(`Connected to tenant database: ${vendorDatabase}`);
 
-  await setCache(cacheKey, JSON.stringify(dataSourceOptions), 60 * 60 * 24); // Cache for 24 hours
+  await setDataByKey(cacheKey, JSON.stringify(dataSourceOptions), 60 * 60 * 24); // Cache for 24 hours
 
   return dataSource;
 };
