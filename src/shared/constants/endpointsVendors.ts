@@ -1,6 +1,6 @@
 export const ENDPOINTS : any[] = [
     {
-      name: 'Shipsaving',
+      name: 'Shipsavings',
       environment: 'production',
       apiKey: '',
       vendorDomain : "https://s.shipsaving.com",
@@ -11,7 +11,7 @@ export const ENDPOINTS : any[] = [
       rateOrderEndpoint : 'https://s.shipsaving.comapi/rates/list',
     },
     {
-      name: 'Shipsaving',
+      name: 'Shipsavings',
       environment: 'development',
       apiKey: '',
       vendorDomain : "https://www.shipsaving.us",

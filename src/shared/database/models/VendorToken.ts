@@ -28,4 +28,13 @@ export class VendorToken {
     @JoinColumn({ name: 'vendor_id' })
     vendor!: Vendor;
     
+    constructor(id: number, vendor_id: number, module: string, token: string, generated_at: Date, expired_on: Date, remark: string) {
+        this.id = id;
+        this.vendor_id = vendor_id;
+        this.module = module;
+        this.token = token;
+        this.generated_at = generated_at;
+        this.expired_on = expired_on;
+        this.remark = remark;
+    }
 };
