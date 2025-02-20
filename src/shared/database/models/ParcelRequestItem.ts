@@ -102,18 +102,25 @@ interface PackageContent {
   country_export: 'string'
 }
 
+interface PackageServiceOptions {
+  "DeliveryConfirmation": { 
+    "DCISType": any 
+  }
+}
+
 export class ParcelRequestItem {
     id!: string;
     rateSearchId!: string;
     parcelRequestId!: string; 
     shipFrom!: ShipFrom; 
     shipTo!: ShipTo; 
-    parcelSize?: ParcelSize;
+    parcelSize!: ParcelSize;
     shippingLane!: ShippingLane;
     customerReference!: CustomerReference;
     packageContent!: PackageContent[];
+    packageServiceOptions!: PackageServiceOptions[];
 
-    constructor(shipTo: any, shipFrom: any, parcelSize: any, shippingLane: any, customerReference: any, packageContent: any[], id: string, rateSearchId: string, parcelRequestId: string) {
+    constructor(shipTo: any, shipFrom: any, parcelSize: any, shippingLane: any, customerReference: any, packageContent: any[], id: string, rateSearchId: string, parcelRequestId: string, packageServiceOptions: any) { 
       this.shipTo = JSON.parse(shipTo);
       this.shipFrom = JSON.parse(shipFrom);
       this.parcelSize = JSON.parse(parcelSize);
@@ -121,6 +128,16 @@ export class ParcelRequestItem {
       this.customerReference = JSON.parse(customerReference);
       if (packageContent) {
         this.packageContent = packageContent;
+      } else {
+        this.packageContent = [];
+      }
+      this.id = id;
+      this.parcelRequestId = parcelRequestId;
+      this.rateSearchId = rateSearchId;
+      if(packageServiceOptions) {
+        this.packageServiceOptions = JSON.parse(packageServiceOptions);
+      } else {  
+        this.packageServiceOptions = [];
       }
     }
   }
