@@ -43,5 +43,34 @@ export const ENDPOINTS : any[] = [
       createOrderEndpoint : "http://ioteasy.tpddns.cn:9102/api/gts/CreateOrder",
       cancelOrderEndpoint : "http://ioteasy.tpddns.cn:9102/api/gts/VoidShipment",
       getLabelEndpoint : "http://ioteasy.tpddns.cn:9102/api/gts/ShippingLabel",
+    },
+    // https://www.deepros.com
+    // api document 
+    // api carrier list https://deepros.com/CarrierList.aspx
+    //
+    //开放Api Key:60c3db80f9d44e8a9407197f3b258479
+    //开放Secret:aeed82491966484ba96cd5f0bac7e1af
+    //@Roger
+    //UPS 835- SS 
+    //http://login.yccang.com/Login.aspx
+    //username:  rogerpaul@iotsolutions.ai
+    //password: Yun2023!
+    {
+      name: 'Dp',
+      environment: 'production',
+      apiKey: '',
+      vendorDomain : "",
+      tokenEndpoint : "",
+      createOrderEndpoint : "https://login.yccang.com/Api/Express/CreateLabel.ashx?",
+      cancelOrderEndpoint : "https://login.yccang.com/Api/Express/LabelsCancel.ashx?",
+    },
+    {
+      name: 'Dp',
+      environment: 'development',
+      apiKey: '',
+      vendorDomain : "",
+      tokenEndpoint : "",
+      createOrderEndpoint : "https://login.yccang.com/Api/Express/CreateLabel.ashx?",
+      cancelOrderEndpoint : "https://login.yccang.com/Api/Express/LabelsCancel.ashx?",
     }
 ]
