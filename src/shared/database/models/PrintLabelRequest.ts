@@ -52,7 +52,8 @@ export class PrintLabelRequest {
                 packageContents,
                 metaParcelRequestItem.uuid,
                 printLabelRequest.rateSearchID,
-                metaParcelRequestItem.parcel_request_id);
+                metaParcelRequestItem.parcel_request_id,
+                metaParcelRequestItem.input_package_service_option);
             return printLabelRequest;
         } else {
             console.log('Failed to get parcel request item from Redis');
