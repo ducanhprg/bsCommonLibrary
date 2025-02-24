@@ -72,5 +72,20 @@ export const ENDPOINTS : any[] = [
       tokenEndpoint : "",
       createOrderEndpoint : "https://login.yccang.com/Api/Express/CreateLabel.ashx?",
       cancelOrderEndpoint : "https://login.yccang.com/Api/Express/LabelsCancel.ashx?",
+    },
+    {
+      name: 'Ftd',
+      environment: 'production',
+      apiKey: '',
+      vendorDomain : "",
+      tokenEndpoint : "http://gw-api.ftdint.com/api/login/access_token",
+      createOrderEndpoint : "http://gw-api.ftdint.com/api/service/create_order",
+      cancelOrderEndpoint : "ttp://gw-api.ftdint.com/api/service/cancel_order",
+      refreshTokenEndpoint : "http://gw-api.ftdint.com/api/login/refresh_token",
+    },
+    {
+      name: 'Ftd',
+      environment: 'development',
+      //NOTE: NO SANDBOX SERVER for FTD
     }
 ]
