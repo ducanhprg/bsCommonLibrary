@@ -8,6 +8,8 @@ interface ParcelSize {
   weight:number;
   dimension_unit: string;
   weight_unit: string;
+  chargeable_weight: number;
+  chargeable_weight_unit: string;
 }
 
 interface ShipFrom {
@@ -61,6 +63,7 @@ interface ShippingLane {
   service_type_code: string;
   carrier_code: string;
   address_clarification: string;
+  shipping_date: any;
 }
 
 interface CustomerReference {
@@ -74,32 +77,31 @@ interface CustomerReference {
 }
 
 interface PackageContent {
+  commodity_desc: 'string',
+  country_export: 'string',
+  country_import: 'string',
+  country_origin: 'string',
+  created_at: 'string',
+  declared_currency: 'string',
+  declared_item_value: 'string',
   declared_total_value: 'string',
   export_country_hts_code: 'string',
-  item_no: 'string',
-  commodity_desc: 'string',
-  item_weight_unit: 'string',
-  declared_item_value: 'string',
-  total_net_weight: 'string',
-  declared_currency: 'string',
-  country_import: 'string',
-  import_country_hts_code: 'string',
   id: 'string',
-  parcel_request_item_id: 'string',
-  item_sku: 'string',
-  total_gross_weight: 'string',
-  item_gross_weight_unit: 'string',
-  country_origin: 'string',
-  reference_json: 'string',
-  created_at: 'string',
-  item_desc: 'string',
+  import_country_hts_code: 'string',
   item_category: 'string',
-  item_product_id: 'string',
-  total_quantity: 'string',
-  updated_at: 'string',
+  item_desc: 'string',
   item_gross_weight: 'string',
+  item_gross_weight_unit: 'string',
   item_net_weight: 'string',
-  country_export: 'string'
+  item_no: 'string',
+  item_product_id: 'string',
+  item_sku: 'string',
+  item_weight_unit: 'string',
+  reference_json: 'string',
+  total_gross_weight: 'string',
+  total_net_weight: 'string',
+  total_quantity: 'string',
+  updated_at: 'string'
 }
 
 interface PackageServiceOptions {
@@ -111,7 +113,8 @@ interface PackageServiceOptions {
 export class ParcelRequestItem {
     id!: string;
     rateSearchId!: string;
-    parcelRequestId!: string; 
+    parcelRequestId!: string;
+    rateSearchItemId!: string; 
     shipFrom!: ShipFrom; 
     shipTo!: ShipTo; 
     parcelSize!: ParcelSize;
@@ -120,7 +123,7 @@ export class ParcelRequestItem {
     packageContent!: PackageContent[];
     packageServiceOptions!: PackageServiceOptions[];
 
-    constructor(shipTo: any, shipFrom: any, parcelSize: any, shippingLane: any, customerReference: any, packageContent: any[], id: string, rateSearchId: string, parcelRequestId: string, packageServiceOptions: any) { 
+    constructor(shipTo: any, shipFrom: any, parcelSize: any, shippingLane: any, customerReference: any, packageContent: any[], id: string, rateSearchId: string, parcelRequestId: string, packageServiceOptions: any, rateSearchItemId : string) { 
       this.shipTo = JSON.parse(shipTo);
       this.shipFrom = JSON.parse(shipFrom);
       this.parcelSize = JSON.parse(parcelSize);
@@ -139,6 +142,7 @@ export class ParcelRequestItem {
       } else {  
         this.packageServiceOptions = [];
       }
+      this.rateSearchItemId = rateSearchItemId;
     }
   }
   
