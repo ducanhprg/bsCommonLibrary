@@ -80,11 +80,25 @@ export const ENDPOINTS : any[] = [
       vendorDomain : "",
       tokenEndpoint : "http://gw-api.ftdint.com/api/login/access_token",
       createOrderEndpoint : "http://gw-api.ftdint.com/api/service/create_order",
-      cancelOrderEndpoint : "ttp://gw-api.ftdint.com/api/service/cancel_order",
+      cancelOrderEndpoint : "http://gw-api.ftdint.com/api/service/cancel_order",
       refreshTokenEndpoint : "http://gw-api.ftdint.com/api/login/refresh_token",
     },
     {
       name: 'Ftd',
+      environment: 'development',
+      //NOTE: NO SANDBOX SERVER for FTD
+    },
+    {
+      name: 'Pylon',
+      environment: 'production',
+      apiKey: '',
+      vendorDomain : "https://carrier-api.pylonlogistics.com/api/auth/v4/accesstoken",
+      tokenEndpoint : "https://carrier-api.pylonlogistics.com/api",
+      createOrderEndpoint : "https://carrier-api.pylonlogistics.com/api/CreateShipment",
+      cancelOrderEndpoint : "https://carrier-api.pylonlogistics.com/api/CancelLabel",
+    },
+    {
+      name: 'Pylon',
       environment: 'development',
       //NOTE: NO SANDBOX SERVER for FTD
     }
