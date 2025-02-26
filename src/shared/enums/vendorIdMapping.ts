@@ -1,0 +1,22 @@
+import { Vendors } from "./vendors";
+export enum VENDOR_IDS {
+    VENDOR_GDE = 6,
+    VENDOR_UPS = 100,
+    VENDOR_DHL = 9,
+    VENDOR_FEDEX = 10,
+    VENDOR_SHIPSAVING = 7,
+    VENDOR_DP = 2,
+    VENDOR_FTD = 1,
+    VENDOR_PYLON = 11,
+}
+
+export const VENDOR_ID_MAPPING: Record<VENDOR_IDS, string> = {
+    [VENDOR_IDS.VENDOR_GDE]: Vendors.VENDOR_GDE,
+    [VENDOR_IDS.VENDOR_UPS]: Vendors.VENDOR_UPS,
+    [VENDOR_IDS.VENDOR_DHL]: Vendors.VENDOR_DHL,
+    [VENDOR_IDS.VENDOR_FEDEX]: Vendors.VENDOR_FEDEX,
+    [VENDOR_IDS.VENDOR_SHIPSAVING]: Vendors.VENDOR_SHIPSAVING,
+    [VENDOR_IDS.VENDOR_DP]: Vendors.VENDOR_DP,
+    [VENDOR_IDS.VENDOR_FTD]: Vendors.VENDOR_FTD,
+    [VENDOR_IDS.VENDOR_PYLON]: Vendors.VENDOR_PYLON,
+};

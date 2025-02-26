@@ -258,5 +258,87 @@ export const publishMessage = async (channel: string, message: string) => {
         console.error("❌ Error publishing message:", error);
     }
 };
-
+export const getParentData = async (
+    itemKeys: string[],  // Mảng các itemKey
+    rateSearchItemPrefix: string = "rate_search_items", // Đổi thành "rate_search_items" để lấy dữ liệu từ hash rate_search_items
+    rateSearchPrefix: string = "rate_searches",
+    parcelRequestPrefix: string = "parcel_request_items"
+  ): Promise<Record<string, { rate_search_item: Record<string, string>, rate_search: Record<string, string>, parcel_request_item: Record<string, string> } | null>> => {
+    const results: Record<string, { rate_search_item: Record<string, string>, rate_search: Record<string, string>, parcel_request_item: Record<string, string> } | null> = {};
+  
+    try {
+      // Tạo pipeline cho các lệnh hget tất cả các itemKeys từ "rate_search_items"
+      const pipeline = redisClient.pipeline();
+      itemKeys.forEach((itemKey) => {
+        pipeline.hget(`${rateSearchItemPrefix}:${itemKey}`, "rate_search_id");
+      });
+  
+      // Thực thi toàn bộ các lệnh hget trong pipeline một lần
+      const responses = await pipeline.exec();
+  
+      // Kiểm tra nếu responses là null hoặc undefined
+      if (!responses) {
+        throw new Error('Redis pipeline response is null or undefined');
+      }
+  
+      // Xử lý từng phần tử trong mảng responses
+      const rateSearchPromises = itemKeys.map((itemKey, index) => {
+        const [error1, rateSearchId] = responses[index] as [Error | null, unknown];
+  
+        // Kiểm tra lỗi và đảm bảo rằng rateSearchId là một chuỗi hợp lệ
+        if (error1 || !rateSearchId || typeof rateSearchId !== 'string') {
+          results[itemKey] = null;
+          return Promise.resolve(null); // Trả về null nếu không có rateSearchId hợp lệ
+        }
+  
+        // Nếu rateSearchId hợp lệ, thực hiện hgetall trên "rate_searches:{rateSearchId}"
+        const rateSearchKey = `${rateSearchPrefix}:${rateSearchId}`;
+        return redisClient.hgetall(rateSearchKey); // Trả về promise của hgetall
+      });
+  
+      // Đợi tất cả các promise của hgetall hoàn thành
+      const rateSearchDataArray = await Promise.all(rateSearchPromises);
+  
+      // Xử lý kết quả và truy xuất dữ liệu từ "rate_search_items" và "parcel_request_items"
+      for (let i = 0; i < itemKeys.length; i++) {
+        const itemKey = itemKeys[i];
+        const rateSearchData = rateSearchDataArray[i];
+  
+        // Kiểm tra nếu rateSearchData không hợp lệ
+        if (!rateSearchData || Object.keys(rateSearchData).length === 0) {
+          results[itemKey] = null;
+          continue;
+        }
+  
+        // Lấy giá trị của "parcel_request_item_id" từ "rate_searches:{rateSearchId}"
+        const parcelRequestItemId = rateSearchData["parcel_request_item_id"];
+  
+        if (!parcelRequestItemId) {
+          results[itemKey] = null;
+          continue;
+        }
+  
+        // Truy vấn "parcel_request_items:{parcelRequestItemId}"
+        const parcelRequestKey = `${parcelRequestPrefix}:${parcelRequestItemId}`;
+        const parcelRequestData = await redisClient.hgetall(parcelRequestKey);
+  
+        // Truy vấn "rate_search_items:{itemKey}" để lấy toàn bộ dữ liệu
+        const rateSearchItemKey = `${rateSearchItemPrefix}:${itemKey}`;
+        const rateSearchItemData = await redisClient.hgetall(rateSearchItemKey);
+  
+        // Tạo kết quả cho itemKey và giữ nguyên key-value
+        results[itemKey] = {
+          rate_search_item: rateSearchItemData,  // Lấy toàn bộ dữ liệu từ rate_search_items:{itemKey}
+          rate_search: rateSearchData,           // Giữ nguyên key-value của rate_search
+          parcel_request_item: parcelRequestData || {}  // Giữ nguyên key-value của parcel_request_item
+        };
+      }
+  
+      return results;  // Trả về kết quả sau khi xử lý xong
+  
+    } catch (error) {
+      console.error(`Error in getParentData: ${error instanceof Error ? error.message : String(error)}`);
+      return {};  // Đảm bảo hàm trả về giá trị hợp lệ trong trường hợp có lỗi
+    }
+  };
 export default redisClient;
