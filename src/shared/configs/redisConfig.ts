@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import Redis from 'ioredis';
 
 const REDIS_HOST = process.env.REDIS_HOST || 'docker_redis';
