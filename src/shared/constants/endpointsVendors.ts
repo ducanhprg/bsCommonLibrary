@@ -101,5 +101,22 @@ export const ENDPOINTS : any[] = [
       name: 'Pylon',
       environment: 'development',
       //NOTE: NO SANDBOX SERVER for FTD
+    },
+    {
+      name: 'Fedex',
+      environment: 'production',
+      apiKey: '',
+      vendorDomain : "https://apis.fedex.com",
+      tokenEndpoint : "https://apis.fedex.com/oauth/token",
+      createOrderEndpoint : "https://apis.fedex.com/ship/v1/shipments",
+      cancelOrderEndpoint : "https://apis.fedex.com/ship/v1/shipments/cancel",
+    },
+    {
+      name: 'Fedex',
+      environment: 'development',
+      vendorDomain : "https://apis-sandbox.fedex.com",
+      tokenEndpoint : "https://apis-sandbox.fedex.com/oauth/token",
+      createOrderEndpoint : "https://apis-sandbox.fedex.com/ship/v1/shipments",
+      cancelOrderEndpoint : "https://apis-sandbox.fedex.com/ship/v1/shipments/cancel",
     }
 ]

@@ -33,21 +33,21 @@ export class PrintLabelRequest {
         };
         let keyParcelRequestItem = this.generateKey(redisKeys.REDIS_KEY_PARCEL_REQUEST_ITEM, printLabelRequest.parcelRequestItemID);
         let keyRateSearch = this.generateKey(redisKeys.REDIS_KEY_RATE_SEARCH, printLabelRequest.rateSearchID);
-        let keyRateSearchItem = this.generateKey(redisKeys.REDIS_KEY_RATE_SEARCH_ITEM, printLabelRequest.rateSearchID);
+        let keyRateSearchItem = this.generateKey(redisKeys.REDIS_KEY_RATE_SEARCH_ITEM, printLabelRequest.rateSearchItemID);
         let metaParcelRequestItem = await getDataByHashKey(keyParcelRequestItem);
         let metaRateSearch = await getDataByHashKey(keyRateSearch);
         let metaRateSearchItem = await getDataByHashKey(keyRateSearchItem);
         if (metaParcelRequestItem && metaRateSearch && metaRateSearchItem) {
             let parcelSize = {
-                length: metaRateSearch.length,
-                width: metaRateSearch.width,
-                height: metaRateSearch.height,
-                weight: metaRateSearch.weight,
+                length: metaParcelRequestItem.length,
+                width: metaParcelRequestItem.width,
+                height: metaParcelRequestItem.height,
+                weight: metaParcelRequestItem.weight,
+                cubic_ft: metaParcelRequestItem.cubic_ft,
                 length_plus_girth: metaRateSearch.length_plus_girth,
                 girth: metaRateSearch.girth,
-                cubic_ft: metaRateSearch.cubic_ft,
-                weight_unit: metaRateSearch.weight_unit,
-                dimension_unit: metaRateSearch.dimension_unit,
+                weight_unit: metaParcelRequestItem.weight_unit,
+                dimension_unit: metaParcelRequestItem.dimension_unit,
                 chargeable_weight: metaRateSearchItem.chargeable_weight,
                 chargeable_weight_unit: metaRateSearchItem.chargeable_weight_unit
             };
@@ -57,7 +57,8 @@ export class PrintLabelRequest {
                 carrier_code: metaRateSearch.carrier_code,
                 service_type_code: metaRateSearch.service_type_code,
                 address_clarification: metaParcelRequestItem.address_clarification,
-                shipping_date: metaParcelRequestItem.input_shipping_date
+                shipping_date: metaParcelRequestItem.input_shipping_date,
+                packaging_type: metaParcelRequestItem.input_packaging_type
             };
 
             let packageContents = await this.getPackageContent(keyParcelRequestItem);
