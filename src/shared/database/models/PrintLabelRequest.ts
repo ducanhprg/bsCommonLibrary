@@ -9,6 +9,15 @@ export class PrintLabelRequest {
     rateSearchItemID!: string;
     parcelRequestItem!: ParcelRequestItem;
     customerInfo!: any;
+    rateInfo!: {
+        total: number;
+        currency_code: string;
+        dim_factor: number;
+        rate_amount: number;
+        surcharge_amount: number;
+        duty_code: string;
+        rate_card_header_id: number;
+    };
 
     constructor(record?: Record<string, string>) {
         if (record) {
@@ -62,6 +71,15 @@ export class PrintLabelRequest {
             };
 
             let packageContents = await this.getPackageContent(keyParcelRequestItem);
+            printLabelRequest.rateInfo = {
+                total: parseFloat(metaRateSearchItem.total),
+                currency_code: metaRateSearchItem.currency_code,
+                dim_factor: parseInt(metaRateSearchItem.dim_factor),
+                rate_amount: parseFloat(metaRateSearchItem.rate),
+                surcharge_amount: parseFloat(metaRateSearchItem.surcharge),
+                duty_code: metaRateSearchItem.duty_code,
+                rate_card_header_id: parseInt(metaRateSearchItem.rate_card_header_id)
+            }
             printLabelRequest.parcelRequestItem = new ParcelRequestItem(
                 metaParcelRequestItem.address_to_json,
                 metaParcelRequestItem.address_from_json,
@@ -99,11 +117,12 @@ export class PrintLabelRequest {
     public toRecord(): Record<string, string> {
         const record: Record<string, string> = {
             request_id: this.request_id,
-            parcelRequestItemID: this.parcelRequestItemID,
-            rateSearchID: this.rateSearchID,
-            rateSearchItemID: this.rateSearchItemID,
-            customerInfo: JSON.stringify(this.customerInfo),
-            parcelRequestItem: JSON.stringify(this.parcelRequestItem)
+            parcel_request_item_id: this.parcelRequestItemID,
+            rate_search_id: this.rateSearchID,
+            rate_search_item_id: this.rateSearchItemID,
+            customer_info: JSON.stringify(this.customerInfo),
+            parcel_request_item: JSON.stringify(this.parcelRequestItem),
+            rate_info: JSON.stringify(this.rateInfo)
         };
         return record;
     }
