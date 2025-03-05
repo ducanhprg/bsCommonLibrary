@@ -9,6 +9,15 @@ export class PrintLabelRequest {
     rateSearchItemID!: string;
     parcelRequestItem!: ParcelRequestItem;
     customerInfo!: any;
+    rateInfo!: {
+        total: number;
+        currency_code: string;
+        dim_factor: number;
+        rate_amount: number;
+        surcharge_amount: number;
+        duty_code: string;
+        rate_card_header_id: number;
+    };
 
     constructor(record?: Record<string, string>) {
         if (record) {
@@ -33,21 +42,21 @@ export class PrintLabelRequest {
         };
         let keyParcelRequestItem = this.generateKey(redisKeys.REDIS_KEY_PARCEL_REQUEST_ITEM, printLabelRequest.parcelRequestItemID);
         let keyRateSearch = this.generateKey(redisKeys.REDIS_KEY_RATE_SEARCH, printLabelRequest.rateSearchID);
-        let keyRateSearchItem = this.generateKey(redisKeys.REDIS_KEY_RATE_SEARCH_ITEM, printLabelRequest.rateSearchID);
+        let keyRateSearchItem = this.generateKey(redisKeys.REDIS_KEY_RATE_SEARCH_ITEM, printLabelRequest.rateSearchItemID);
         let metaParcelRequestItem = await getDataByHashKey(keyParcelRequestItem);
         let metaRateSearch = await getDataByHashKey(keyRateSearch);
         let metaRateSearchItem = await getDataByHashKey(keyRateSearchItem);
         if (metaParcelRequestItem && metaRateSearch && metaRateSearchItem) {
             let parcelSize = {
-                length: metaRateSearch.length,
-                width: metaRateSearch.width,
-                height: metaRateSearch.height,
-                weight: metaRateSearch.weight,
+                length: metaParcelRequestItem.length,
+                width: metaParcelRequestItem.width,
+                height: metaParcelRequestItem.height,
+                weight: metaParcelRequestItem.weight,
+                cubic_ft: metaParcelRequestItem.cubic_ft,
                 length_plus_girth: metaRateSearch.length_plus_girth,
                 girth: metaRateSearch.girth,
-                cubic_ft: metaRateSearch.cubic_ft,
-                weight_unit: metaRateSearch.weight_unit,
-                dimension_unit: metaRateSearch.dimension_unit,
+                weight_unit: metaParcelRequestItem.weight_unit,
+                dimension_unit: metaParcelRequestItem.dimension_unit,
                 chargeable_weight: metaRateSearchItem.chargeable_weight,
                 chargeable_weight_unit: metaRateSearchItem.chargeable_weight_unit
             };
@@ -57,10 +66,20 @@ export class PrintLabelRequest {
                 carrier_code: metaRateSearch.carrier_code,
                 service_type_code: metaRateSearch.service_type_code,
                 address_clarification: metaParcelRequestItem.address_clarification,
-                shipping_date: metaParcelRequestItem.input_shipping_date
+                shipping_date: metaParcelRequestItem.input_shipping_date,
+                packaging_type: metaParcelRequestItem.input_packaging_type
             };
 
             let packageContents = await this.getPackageContent(keyParcelRequestItem);
+            printLabelRequest.rateInfo = {
+                total: parseFloat(metaRateSearchItem.total),
+                currency_code: metaRateSearchItem.currency_code,
+                dim_factor: parseInt(metaRateSearchItem.dim_factor),
+                rate_amount: parseFloat(metaRateSearchItem.rate),
+                surcharge_amount: parseFloat(metaRateSearchItem.surcharge),
+                duty_code: metaRateSearchItem.duty_code,
+                rate_card_header_id: parseInt(metaRateSearchItem.rate_card_header_id)
+            }
             printLabelRequest.parcelRequestItem = new ParcelRequestItem(
                 metaParcelRequestItem.address_to_json,
                 metaParcelRequestItem.address_from_json,
@@ -98,11 +117,12 @@ export class PrintLabelRequest {
     public toRecord(): Record<string, string> {
         const record: Record<string, string> = {
             request_id: this.request_id,
-            parcelRequestItemID: this.parcelRequestItemID,
-            rateSearchID: this.rateSearchID,
-            rateSearchItemID: this.rateSearchItemID,
-            customerInfo: JSON.stringify(this.customerInfo),
-            parcelRequestItem: JSON.stringify(this.parcelRequestItem)
+            parcel_request_item_id: this.parcelRequestItemID,
+            rate_search_id: this.rateSearchID,
+            rate_search_item_id: this.rateSearchItemID,
+            customer_info: JSON.stringify(this.customerInfo),
+            parcel_request_item: JSON.stringify(this.parcelRequestItem),
+            rate_info: JSON.stringify(this.rateInfo)
         };
         return record;
     }

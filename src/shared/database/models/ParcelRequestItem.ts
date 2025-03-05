@@ -64,6 +64,7 @@ interface ShippingLane {
   carrier_code: string;
   address_clarification: string;
   shipping_date: any;
+  packaging_type: string;
 }
 
 interface CustomerReference {
@@ -105,8 +106,8 @@ interface PackageContent {
 }
 
 interface PackageServiceOptions {
-  "DeliveryConfirmation": { 
-    "DCISType": any 
+  DeliveryConfirmation: { 
+    DCISType: any 
   }
 }
 
