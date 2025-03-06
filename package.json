@@ -37,6 +37,7 @@
     "@types/fs-extra": "^11.0.4",
     "@types/node": "^22.10.6",
     "@types/pdfkit": "^0.13.9",
+    "@types/ssh2": "^1.15.4",
     "@types/uuid": "^10.0.0",
     "nodemon": "^3.1.9",
     "ts-node": "^10.9.2",
