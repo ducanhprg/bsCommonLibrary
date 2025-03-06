@@ -22,11 +22,12 @@ export class PrintLabelRequest {
     constructor(record?: Record<string, string>) {
         if (record) {
             this.request_id = record.request_id;
-            this.parcelRequestItemID = record.parcelRequestItemID;
-            this.rateSearchID = record.rateSearchID;
-            this.rateSearchItemID = record.rateSearchItemID;
-            this.customerInfo = JSON.parse(record.customerInfo);
-            this.parcelRequestItem = JSON.parse(record.parcelRequestItem);
+            this.parcelRequestItemID = record.parcel_request_item_id;
+            this.rateSearchID = record.rate_search_id;
+            this.rateSearchItemID = record.rate_search_item_id;
+            this.customerInfo = JSON.parse(record.customer_info);
+            this.parcelRequestItem = JSON.parse(record.parcel_request_item);
+            this.rateInfo = JSON.parse(record.rate_info);
         }
     }
 
