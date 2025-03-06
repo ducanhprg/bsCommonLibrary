@@ -2,6 +2,9 @@ import { mainDataSource } from '@shared/configs/mysqlConfig';
 import { Vendor } from '@shared/database/models/Vendor';
 import { setDataByKey, getDataByKey } from '@shared/utils/RedisClient';
 import { getVendorRepository } from '@shared/database/repositories/VendorRepository';
+import { ExchangeNames } from '../enums/exchangeNames';
+import { VendorEventTypes } from '../enums/vendorEventTypes';
+import { RabbitMQClient } from '../utils/RabbitMQClient';
 
 
 export class VendorService {
@@ -34,4 +37,20 @@ export class VendorService {
     }
   }
   
+  public static async publishToExchangeConsolidator(requestId: string, parcelRequestItemId: string, vendorName: string) {
+		try {
+			const event = VendorEventTypes.GET_LABEL;
+			const exchangeName = ExchangeNames.CONSOLIDATOR_REQUESTS;
+			const routingKey = `${vendorName}.${event}`;
+			const messageContent = JSON.stringify(
+				{ 
+					request_id: requestId,
+					parcel_request_items : parcelRequestItemId 
+				});
+			await RabbitMQClient.publish(exchangeName, routingKey, messageContent);
+			console.log(`[x] Sent "${messageContent}" to exchange "${exchangeName}" with the routing key "${routingKey}" `);
+		} catch ( error ) {
+			console.error('Error publishing to exchange:', error);
+		} 
+	}
 }
