@@ -20,4 +20,8 @@ if (REDIS_USER && REDIS_PASSWORD) {
 
 const redisClient = new Redis(redisOptions);
 
+const redisSubClient = new Redis(redisOptions);
+
+
 export const getRedisClient = (): Redis => redisClient;
+export const getRedisSubClient = (): Redis => redisSubClient;
