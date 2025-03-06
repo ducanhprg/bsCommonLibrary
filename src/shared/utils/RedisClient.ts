@@ -1,7 +1,7 @@
-import { getRedisClient } from '@shared/configs/redisConfig';
+import { getRedisClient, getRedisSubClient } from '@shared/configs/redisConfig';
 
 const redisClient = getRedisClient();
-
+const redisAdminClient = getRedisSubClient();
 /**
  * Stores a simple key-value pair in Redis with an optional expiration time.
  * @param {string} key - The Redis key to store.
@@ -210,24 +210,22 @@ export const addMembersToSet = async (setKey: string, members: string[]): Promis
 };
 
 /**
- * 
- * @param {Record<string, Record<string, string>>} hashData 
+ *
+ * @param {Record<string, Record<string, string>>} hashData
  */
-export const createHashForMembers = async (hashData: Record<string, Record<string, any>>): Promise<void> => {
+export const createHashForMembers = async (
+    hashData: Record<string, Record<string, any>>
+  ): Promise<void> => {
     const pipeline = redisClient.pipeline();
-
+  
     Object.entries(hashData).forEach(([key, fields]) => {
-        
-        const transformedFields = {
-            ...fields,
-            address_to_json: JSON.stringify(fields.address_to_json)
-        };
-        pipeline.hmset(key, transformedFields);
+     
+      pipeline.hmset(key, fields);
     });
-
+  
     await pipeline.exec();
-    console.log(`✅ Created ${Object.keys(hashData).length} hash records in Redis`);
-};
+   
+  };
 
 /**
  *
@@ -240,7 +238,6 @@ export const isMemberInSet = async (setKey: string, value: string): Promise<bool
         const result = await redisClient.sismember(setKey, value);
         return result === 1;
     } catch (error) {
-        console.error(`❌ Error checking membership in SET ${setKey}:`, error);
         return false;
     }
 };
@@ -255,62 +252,62 @@ export const publishMessage = async (channel: string, message: string) => {
         await redisClient.publish(channel, message);
         console.log(`📢 [PUBLISH] Sent message: "${message}" to channel "${channel}"`);
     } catch (error) {
-        console.error("❌ Error publishing message:", error);
+        console.error("Error publishing message:", error);
     }
 };
 export const getParentData = async (
-    itemKeys: string[],  // Mảng các itemKey
-    rateSearchItemPrefix: string = "rate_search_items", // Đổi thành "rate_search_items" để lấy dữ liệu từ hash rate_search_items
+    itemKeys: string[], 
+    rateSearchItemPrefix: string = "rate_search_items", 
     rateSearchPrefix: string = "rate_searches",
     parcelRequestPrefix: string = "parcel_request_items"
   ): Promise<Record<string, { rate_search_item: Record<string, string>, rate_search: Record<string, string>, parcel_request_item: Record<string, string> } | null>> => {
     const results: Record<string, { rate_search_item: Record<string, string>, rate_search: Record<string, string>, parcel_request_item: Record<string, string> } | null> = {};
   
     try {
-      // Tạo pipeline cho các lệnh hget tất cả các itemKeys từ "rate_search_items"
+      
       const pipeline = redisClient.pipeline();
       itemKeys.forEach((itemKey) => {
         pipeline.hget(`${rateSearchItemPrefix}:${itemKey}`, "rate_search_id");
       });
   
-      // Thực thi toàn bộ các lệnh hget trong pipeline một lần
+    
       const responses = await pipeline.exec();
   
-      // Kiểm tra nếu responses là null hoặc undefined
+     
       if (!responses) {
         throw new Error('Redis pipeline response is null or undefined');
       }
   
-      // Xử lý từng phần tử trong mảng responses
+    
       const rateSearchPromises = itemKeys.map((itemKey, index) => {
         const [error1, rateSearchId] = responses[index] as [Error | null, unknown];
   
-        // Kiểm tra lỗi và đảm bảo rằng rateSearchId là một chuỗi hợp lệ
+      
         if (error1 || !rateSearchId || typeof rateSearchId !== 'string') {
           results[itemKey] = null;
-          return Promise.resolve(null); // Trả về null nếu không có rateSearchId hợp lệ
+          return Promise.resolve(null); 
         }
   
-        // Nếu rateSearchId hợp lệ, thực hiện hgetall trên "rate_searches:{rateSearchId}"
+      
         const rateSearchKey = `${rateSearchPrefix}:${rateSearchId}`;
-        return redisClient.hgetall(rateSearchKey); // Trả về promise của hgetall
+        return redisClient.hgetall(rateSearchKey);
       });
   
-      // Đợi tất cả các promise của hgetall hoàn thành
+      
       const rateSearchDataArray = await Promise.all(rateSearchPromises);
   
-      // Xử lý kết quả và truy xuất dữ liệu từ "rate_search_items" và "parcel_request_items"
+     
       for (let i = 0; i < itemKeys.length; i++) {
         const itemKey = itemKeys[i];
         const rateSearchData = rateSearchDataArray[i];
   
-        // Kiểm tra nếu rateSearchData không hợp lệ
+        
         if (!rateSearchData || Object.keys(rateSearchData).length === 0) {
           results[itemKey] = null;
           continue;
         }
   
-        // Lấy giá trị của "parcel_request_item_id" từ "rate_searches:{rateSearchId}"
+       
         const parcelRequestItemId = rateSearchData["parcel_request_item_id"];
   
         if (!parcelRequestItemId) {
@@ -318,27 +315,208 @@ export const getParentData = async (
           continue;
         }
   
-        // Truy vấn "parcel_request_items:{parcelRequestItemId}"
+        
         const parcelRequestKey = `${parcelRequestPrefix}:${parcelRequestItemId}`;
         const parcelRequestData = await redisClient.hgetall(parcelRequestKey);
   
-        // Truy vấn "rate_search_items:{itemKey}" để lấy toàn bộ dữ liệu
+       
         const rateSearchItemKey = `${rateSearchItemPrefix}:${itemKey}`;
         const rateSearchItemData = await redisClient.hgetall(rateSearchItemKey);
   
-        // Tạo kết quả cho itemKey và giữ nguyên key-value
+       
         results[itemKey] = {
-          rate_search_item: rateSearchItemData,  // Lấy toàn bộ dữ liệu từ rate_search_items:{itemKey}
-          rate_search: rateSearchData,           // Giữ nguyên key-value của rate_search
-          parcel_request_item: parcelRequestData || {}  // Giữ nguyên key-value của parcel_request_item
+          rate_search_item: rateSearchItemData, 
+          rate_search: rateSearchData,          
+          parcel_request_item: parcelRequestData || {} 
         };
       }
   
-      return results;  // Trả về kết quả sau khi xử lý xong
+      return results; 
   
     } catch (error) {
       console.error(`Error in getParentData: ${error instanceof Error ? error.message : String(error)}`);
-      return {};  // Đảm bảo hàm trả về giá trị hợp lệ trong trường hợp có lỗi
+      return {};  
     }
+};
+  
+
+/**
+ * 
+ * @param {string} channel 
+ * @param {string} expectedMessage 
+ * @param {number} timeout 
+ * @returns {Promise<string>} 
+ */
+export const listenForMessage = async (
+    channel: string,
+    expectedMessage: string,
+    timeout: number = 5000
+  ): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      let isResolved = false;
+  
+     
+      const timer = setTimeout(() => {
+        if (!isResolved) {
+          reject(
+            new Error(
+              `⏳ Timeout: Không nhận được message "${expectedMessage}" từ ${channel} sau ${timeout}ms`
+            )
+          );
+        }
+      }, timeout);
+  
+  
+      const messageHandler = (receivedChannel: string, message: string) => {
+        if (receivedChannel === channel && message === expectedMessage) {
+          clearTimeout(timer);
+          isResolved = true;
+          redisAdminClient.off("message", messageHandler); 
+          console.log(`📩 Received message: "${message}"`);
+          resolve(message);
+        }
+      };
+  
+      redisAdminClient.subscribe(channel, (err, count) => {
+        if (err) {
+          clearTimeout(timer);
+          reject(new Error(`❌ Lỗi khi subscribe Redis: ${err.message}`));
+        } else {
+          console.log(
+            `👂 Listening on Redis channel: ${channel} (Expecting: "${expectedMessage}")`
+          );
+          redisAdminClient.on("message", messageHandler);
+        }
+      });
+    });
   };
+  
+  export const setToRedis = async (key: string, items: any): Promise<void> => {
+    const pipeline = redisClient.pipeline();
+    for (const item of items) {
+      pipeline.zadd(key, item.score, JSON.stringify(item.value));
+    }
+    await pipeline.exec();
+  };
+  
+  /**
+   
+   * @param {string} key
+   * @param {number} batchSize 
+   */
+  export const getFromRedis = async (key: string): Promise<string[]> => {
+    const rawItems = await redisClient.zrange(key, 0, -1);
+    return rawItems.map((item) => JSON.parse(item));
+  };
+  
+  
+  
+  /**
+   * 
+   * @param {string} key 
+   * @param {number} [timeout=5000] 
+   * @param {number} [interval=50] 
+   * @returns {Promise<string | null>} 
+   */
+  export const getKeyPolling = async (
+    key: string,
+    timeout: number = 5000,
+    interval: number = 50
+  ): Promise<string | null> => {
+    const startTime = Date.now();
+    const lockKey = `lock:${key}`; 
+  
+    while (Date.now() - startTime < timeout) {
+     
+      const pipeline = redisClient.pipeline();
+      pipeline.get(key); 
+      pipeline.get(lockKey); 
+  
+      const responses = await pipeline.exec();
+  
+      if (!responses || responses.length < 2) {
+       
+        return null; 
+      }
+  
+      const getResult = responses[0];
+      const lockResult = responses[1];
+  
+      
+      const value = getResult[1] as string | null; 
+      const lock = lockResult[1] as string | null; 
+  
+      if (value !== null) {
+      
+        return value; 
+      }
+  
+      if (!lock) {
+       
+        return null;
+      }
+  
+      await new Promise((resolve) => setTimeout(resolve, interval));
+    }
+  
+   
+    return null;
+  };
+  
+  
+  export const setKeyPoling = async (
+      key: string,
+      value: string,
+      ttl: number = 3600
+    ): Promise<void> => {
+      const lockKey = `lock:${key}`;
+      const LOCK_EXPIRY = 10; 
+     
+      const lockAcquired = await redisClient.set(lockKey, "1", "EX", LOCK_EXPIRY, "NX");
+  
+    
+      if (!lockAcquired) {
+     
+        return;
+      }
+    
+      try {
+      
+        await redisClient.set(key, value, "EX", ttl);
+      
+      } catch (error) {
+       
+      } finally {
+       
+        await redisClient.del(lockKey);
+      }
+    };
+    
+    /**
+   * 
+   * @param {string} setKey 
+   * @returns {Promise<string[]>} 
+   */
+  export const getSetMembers = async (setKey: string): Promise<string[]> => {
+      try {
+        const members = await redisClient.smembers(setKey);
+        return members || [];
+      } catch (error) {
+        return [];
+      }
+    };
+
+    export const incrementHashField = async (
+      hashKey: string,
+      field: string = 'current',
+      value: number = 1
+    ): Promise<number> => {
+      try {
+        const newValue = await redisClient.hincrby(hashKey, field, value);
+        return newValue;
+      } catch (error) {
+        console.error("Error incrementing hash field:", error);
+        throw error;
+      }
+    };
 export default redisClient;
