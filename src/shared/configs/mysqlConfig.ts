@@ -38,8 +38,9 @@ const isConnectionHealthy = async (dataSource: DataSource): Promise<boolean> => 
   try {
     await dataSource.query('SELECT 1');
     return true;
-  } catch (error) {
-    console.error(`Connection health check failed for database: ${error.message}`);
+  } catch (error: unknown) {
+    const err = error as Error; 
+    console.error(`Connection health check failed for database: ${err.message}`);
     return false;
   }
 };
@@ -117,8 +118,9 @@ export const getTenantDataSource = async (vendorDatabase: string): Promise<DataS
         } else {
           try {
             await existingDataSource.destroy();
-          } catch (e) {
-            console.warn(`Failed to properly close unhealthy connection: ${e.message}`);
+          } catch (e: unknown) {
+            const err = e as Error;
+            console.warn(`Failed to properly close unhealthy connection: ${err.message}`);
           }
           tenantConnections.delete(vendorDatabase);
           const index = connectionLRU.indexOf(vendorDatabase);
