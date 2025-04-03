@@ -423,7 +423,7 @@ export const listenForMessage = async (
   channel: string,
   expectedMessage: string,
   timeout: number = 5000
-): Promise<string> => {
+): Promise<any> => {
   return new Promise((resolve, reject) => {
     let isResolved = false;
 
