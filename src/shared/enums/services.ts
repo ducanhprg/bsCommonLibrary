@@ -1,9 +1,11 @@
 export enum Services {
-    SERVICE_VALIDATOR = 'validator',
-    CONSOLIDATOR_SERVICE = 'consolidator'
+    VALIDATOR_SERVICE = 'validator',
+    CONSOLIDATOR_SERVICE = 'consolidator',
+    MONOLITH_SERVICE = 'monolith'
 }
 
 export const SERVICE_STATUS: Record<Services, boolean> = {
-    [Services.SERVICE_VALIDATOR]: true,
+    [Services.VALIDATOR_SERVICE]: true,
     [Services.CONSOLIDATOR_SERVICE]: true,
+    [Services.MONOLITH_SERVICE]: true,
 };
