@@ -43,9 +43,6 @@ export const healthCheck = async (req: Request, res: Response) => {
 
     // Check MySQL connection
     try {
-      if (!mainDataSource.isInitialized) {
-        await mainDataSource.initialize();
-      }
       await mainDataSource.query('SELECT 1');
       healthStatus.services.mysql = true;
     } catch (error) {
