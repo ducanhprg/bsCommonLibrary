@@ -19,7 +19,6 @@ export const mainDataSource = new DataSource({
   synchronize: false,
   logging: false,
   entities: ['src/infrastructure/database/main/models/**/*.ts', 'src/shared/database/models/**/*.ts'],
-  extra: { connectionLimit: 10 },
 } as DataSourceOptions);
 
 const multiTenantBaseConfig: DataSourceOptions = {
@@ -31,16 +30,15 @@ const multiTenantBaseConfig: DataSourceOptions = {
   synchronize: false,
   logging: false,
   entities: ['src/infrastructure/database/multi-tenant/entities/**/*.ts'],
-  extra: { connectionLimit: 5 },
+  extra: { connectionLimit: 3 }, 
 };
 
-const isConnectionHealthy = async (dataSource: DataSource): Promise<boolean> => {
+export const isConnectionHealthy = async (dataSource: DataSource): Promise<boolean> => {
   try {
     await dataSource.query('SELECT 1');
     return true;
   } catch (error: unknown) {
-    const err = error as Error; 
-    console.error(`Connection health check failed for database: ${err.message}`);
+    console.error(`Connection health check failed for database: ${(error as Error).message}`);
     return false;
   }
 };
@@ -70,7 +68,7 @@ const evictLeastRecentlyUsed = async (maxAttempts: number = 3): Promise<boolean>
       tenantConnections.delete(leastRecentlyUsed);
       await setDataByKey(`tenant-connection:${SERVICE_ID}:${leastRecentlyUsed}`, 'evicted', 10);
       return true;
-    } catch (error) {
+    } catch (error: unknown) {
       console.error(`Failed to evict connection ${leastRecentlyUsed} (attempt ${attempts + 1}):`, error);
       attempts++;
     }
@@ -89,7 +87,7 @@ const initializeDataSourceWithRetry = async (
     try {
       await dataSource.initialize();
       return dataSource;
-    } catch (error) {
+    } catch (error: unknown) {
       retries++;
       if (retries >= maxRetries) {
         console.error(`Failed to initialize connection to ${vendorDatabase} after ${maxRetries} attempts`);
@@ -103,32 +101,23 @@ const initializeDataSourceWithRetry = async (
 };
 
 export const getTenantDataSource = async (vendorDatabase: string): Promise<DataSource> => {
-  try {
-    if (!vendorDatabase || typeof vendorDatabase !== 'string') {
-      throw new Error('Invalid vendor database name');
-    }
+  if (!vendorDatabase || typeof vendorDatabase !== 'string') {
+    throw new Error('Invalid vendor database name');
+  }
 
+  try {
     if (tenantConnections.has(vendorDatabase)) {
       const existingDataSource = tenantConnections.get(vendorDatabase)!;
-      if (existingDataSource.isInitialized) {
-        if (await isConnectionHealthy(existingDataSource)) {
-          updateLRUOrder(vendorDatabase);
-          await setDataByKey(`tenant-connection:${SERVICE_ID}:${vendorDatabase}`, 'active', 60);
-          return existingDataSource;
-        } else {
-          try {
-            await existingDataSource.destroy();
-          } catch (e: unknown) {
-            const err = e as Error;
-            console.warn(`Failed to properly close unhealthy connection: ${err.message}`);
-          }
-          tenantConnections.delete(vendorDatabase);
-          const index = connectionLRU.indexOf(vendorDatabase);
-          if (index !== -1) {
-            connectionLRU.splice(index, 1);
-          }
-        }
+      if (existingDataSource.isInitialized && await isConnectionHealthy(existingDataSource)) {
+        updateLRUOrder(vendorDatabase);
+        await setDataByKey(`tenant-connection:${SERVICE_ID}:${vendorDatabase}`, 'active', 60);
+        return existingDataSource;
       } else {
+        try {
+          await existingDataSource.destroy();
+        } catch (error: unknown) {
+          console.warn(`Failed to properly close unhealthy connection: ${(error as Error).message}`);
+        }
         tenantConnections.delete(vendorDatabase);
         const index = connectionLRU.indexOf(vendorDatabase);
         if (index !== -1) {
@@ -151,7 +140,7 @@ export const getTenantDataSource = async (vendorDatabase: string): Promise<DataS
     if (cachedDataSourceOptions) {
       try {
         dataSourceOptions = JSON.parse(cachedDataSourceOptions) as DataSourceOptions;
-      } catch (error) {
+      } catch (error: unknown) {
         console.error(`Invalid cached config for ${vendorDatabase}:`, error);
         dataSourceOptions = { ...multiTenantBaseConfig, database: vendorDatabase };
       }
@@ -168,13 +157,13 @@ export const getTenantDataSource = async (vendorDatabase: string): Promise<DataS
     await setDataByKey(`tenant-connection:${SERVICE_ID}:${vendorDatabase}`, 'active', 60);
     
     return dataSource;
-  } catch (error) {
+  } catch (error: unknown) {
     console.error(`Failed to initialize tenant ${vendorDatabase}:`, error);
     throw error;
   }
 };
 
-const refreshConnectionStatus = async () => {
+const refreshConnectionStatus = async (): Promise<void> => {
   try {
     const staleConnections: string[] = [];
     for (const [tenant, dataSource] of tenantConnections.entries()) {
@@ -191,10 +180,10 @@ const refreshConnectionStatus = async () => {
 
     for (const tenant of staleConnections) {
       const dataSource = tenantConnections.get(tenant);
-      if (dataSource && dataSource.isInitialized) {
+      if (dataSource?.isInitialized) {
         try {
           await dataSource.destroy();
-        } catch (error) {
+        } catch (error: unknown) {
           console.error(`Error closing stale connection for ${tenant}:`, error);
         }
       }
@@ -205,7 +194,7 @@ const refreshConnectionStatus = async () => {
       }
       console.log(`Removed stale connection for tenant: ${tenant}`);
     }
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Failed to refresh connection status:', error);
   }
 };
@@ -223,7 +212,7 @@ export const optimizeConnectionPool = async (): Promise<void> => {
       }
       console.log(`Connection pool optimization complete: ${evicted} connections evicted`);
     }
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Failed to optimize connection pool:', error);
   }
 };
@@ -247,7 +236,7 @@ export const closeTenantConnections = async (): Promise<void> => {
     tenantConnections.clear();
     connectionLRU.length = 0;
     console.log(`Service ${SERVICE_ID} closed all tenant connections.`);
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Failed to close tenant connections:', error);
     throw error;
   }
@@ -259,7 +248,7 @@ export const initializeMainDatabase = async (): Promise<void> => {
       await mainDataSource.initialize();
       console.log(`Service ${SERVICE_ID} connected to the Main database.`);
     }
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Failed to initialize main database:', error);
     throw error;
   }
@@ -279,7 +268,7 @@ export const getConnectionStats = async (): Promise<{
     lruOrder: [...connectionLRU],
     serviceId: SERVICE_ID,
     overSoftLimit: tenantConnections.size > MAX_TENANT_CONNECTIONS,
-    capacityPercentage: (tenantConnections.size / MAX_TENANT_CONNECTIONS) * 100
+    capacityPercentage: (tenantConnections.size / MAX_TENANT_CONNECTIONS) * 100,
   };
 };
 
@@ -287,8 +276,12 @@ if (typeof process !== 'undefined') {
   process.on('SIGTERM', async () => {
     try {
       await closeTenantConnections();
+      if (mainDataSource.isInitialized) {
+        await mainDataSource.destroy();
+        console.log(`Service ${SERVICE_ID} closed main database connection.`);
+      }
       process.exit(0);
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Error during shutdown:', error);
       process.exit(1);
     }
