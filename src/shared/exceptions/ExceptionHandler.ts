@@ -3,6 +3,8 @@ import { ApiException } from './ApiException';
 import { NotFoundException } from './NotFoundException';
 import { ValidationException } from './ValidationException';
 import { VendorException } from './VendorException';
+import { AuthException } from './AuthException';
+
 
 enum ExceptionType {
   BASE = 'base',
@@ -10,6 +12,7 @@ enum ExceptionType {
   VALIDATION = 'validation',
   NOT_FOUND = 'notFound',
   VENDOR = 'vendor',
+  AUTHENTICATION = 'authentication'
 }
 
 export class ExceptionHandler {
@@ -19,6 +22,7 @@ export class ExceptionHandler {
     [ExceptionType.VALIDATION]: ValidationException,
     [ExceptionType.NOT_FOUND]: NotFoundException,
     [ExceptionType.VENDOR]: VendorException,
+    [ExceptionType.AUTHENTICATION]: AuthException
   };
 
   static createBase(message: string, statusCode: number = 500, details?: Record<string, any>, errorCode?: string): BaseException {
