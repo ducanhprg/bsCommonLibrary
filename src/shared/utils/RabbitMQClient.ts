@@ -1,4 +1,4 @@
-import amqplib from "amqplib";
+import amqplib, { Channel } from "amqplib";
 import "dotenv/config";
 
 const RABBITMQ_PROTOCOL = process.env.RABBITMQ_PROTOCOL || "amqp";
@@ -10,6 +10,8 @@ const RABBITMQ_PASSWORD = process.env.RABBITMQ_PASSWORD || "guest";
 const RABBITMQ_URL = `${RABBITMQ_PROTOCOL}://${RABBITMQ_USERNAME}:${RABBITMQ_PASSWORD}@${RABBITMQ_HOST}:${RABBITMQ_PORT}`;
 
 export class RabbitMQClient {
+	private static channels: Channel[] = []; // Track channels for closeAll
+
 	private static async connect() {
 		return await amqplib.connect(RABBITMQ_URL);
 	}
@@ -21,6 +23,7 @@ export class RabbitMQClient {
 	) {
 		const connection = await this.connect();
 		const channel = await connection.createChannel();
+		this.channels.push(channel); // Track channel
 
 		await channel.assertExchange(exchange, "topic", { durable: true });
 		channel.publish(exchange, routingKey, Buffer.from(message), {
@@ -29,11 +32,14 @@ export class RabbitMQClient {
 
 		await channel.close();
 		await connection.close();
+		this.channels = this.channels.filter((ch) => ch !== channel); // Remove closed channel
 	}
 
 	static async createChannel() {
 		const connection = await this.connect();
-		return await connection.createChannel();
+		const channel = await connection.createChannel();
+		this.channels.push(channel); // Track channel
+		return channel;
 	}
 
 	static async closeAll(): Promise<void> {
