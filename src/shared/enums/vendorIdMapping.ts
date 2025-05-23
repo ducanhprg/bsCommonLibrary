@@ -8,6 +8,7 @@ export enum VENDOR_IDS {
     VENDOR_DP = 2,
     VENDOR_FTD = 1,
     VENDOR_PYLON = 11,
+    VENDOR_GDEB = 8,
 }
 
 export const VENDOR_ID_MAPPING: Record<VENDOR_IDS, string> = {
@@ -19,4 +20,5 @@ export const VENDOR_ID_MAPPING: Record<VENDOR_IDS, string> = {
     [VENDOR_IDS.VENDOR_DP]: Vendors.VENDOR_DP,
     [VENDOR_IDS.VENDOR_FTD]: Vendors.VENDOR_FTD,
     [VENDOR_IDS.VENDOR_PYLON]: Vendors.VENDOR_PYLON,
+    [VENDOR_IDS.VENDOR_GDEB]: Vendors.VENDOR_GDEB,
 };
