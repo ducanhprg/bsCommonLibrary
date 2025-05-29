@@ -10,6 +10,7 @@
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
     "strictPropertyInitialization": true,
+    "skipLibCheck": true,
     "paths": {
       "@src/*": ["src/*"],
       "@api/*": ["src/api/*"],
