@@ -1,4 +1,5 @@
-import amqplib, { Channel } from "amqplib";
+import * as amqplib from "amqplib";
+import { Channel } from "amqplib";
 import "dotenv/config";
 
 const RABBITMQ_PROTOCOL = process.env.RABBITMQ_PROTOCOL || "amqp";
