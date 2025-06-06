@@ -123,7 +123,7 @@ export const ENDPOINTS : any[] = [
       // api document -> https://www.showdoc.com.cn/IOTEasy/4410471878010502
       // client_id 账号：Dev
       // secret 密码：Ml4eYCu6PI6z
-      name: 'GDE_B',
+      name: 'Gde_B',
       environment: 'production',
       apiKey: '',
       vendorDomain : "http://dragon.iot-easy.cn",
@@ -133,7 +133,7 @@ export const ENDPOINTS : any[] = [
       getLabelEndpoint : "http://dragon.iot-easy.cn/api/gts/ShippingLabel",
     },
     {
-      name: 'GDE_B',
+      name: 'Gde_B',
       environment: 'development',
       apiKey: '',
       vendorDomain : "http://ioteasy.tpddns.cn:9102",
