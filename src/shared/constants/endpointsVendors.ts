@@ -70,7 +70,7 @@ export const ENDPOINTS : any[] = [
       apiKey: '',
       vendorDomain : "",
       tokenEndpoint : "",
-      createOrderEndpoint : "https://login.yccang.com/Api/Express/CreateLabel.ashx?",
+      createOrderEndpoint : "https://www.ycclabel.com/Api/Express/CreateLabel.ashx?",
       cancelOrderEndpoint : "https://login.yccang.com/Api/Express/LabelsCancel.ashx?",
     },
     {
