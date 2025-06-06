@@ -106,9 +106,9 @@ interface PackageContent {
 }
 
 interface PackageServiceOptions {
-  DeliveryConfirmation: { 
+  delivery_confirmation?: { 
     DCISType: any 
-  }
+  };
 }
 
 export class ParcelRequestItem {
