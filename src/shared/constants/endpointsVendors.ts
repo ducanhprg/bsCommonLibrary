@@ -137,7 +137,7 @@ export const ENDPOINTS : any[] = [
       environment: 'development',
       apiKey: '',
       vendorDomain : "http://ioteasy.tpddns.cn:9102",
-      tokenEndpoint : "http://sanbox.authorization.iot-easy.cn/connect/token",
+      tokenEndpoint : "http://sandbox.authorization.iot-easy.cn/connect/token",
       createOrderEndpoint : "http://ioteasy.tpddns.cn:9102/api/gts/ShippingLabel",
       cancelOrderEndpoint : "http://ioteasy.tpddns.cn:9102/api/gts/VoidShipment",
       getLabelEndpoint : "http://ioteasy.tpddns.cn:9102/api/gts/ShippingLabel",
