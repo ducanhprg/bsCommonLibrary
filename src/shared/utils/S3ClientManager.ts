@@ -4,27 +4,50 @@ import { Agent } from 'https';
 import config from '@configs/config';
 export type { S3 } from 'aws-sdk';
 
+// Default values for S3 configuration
+const DEFAULT_S3_CONFIG = {
+    maxRetries: 3,
+    timeout: 5000,
+    connectTimeout: 5000,
+    maxSockets: 10,
+    maxIdleTime: 300000, // 5 minutes in milliseconds
+    region: 'us-east-1',
+    accessKeyId: 'dummy-access-key',
+    secretAccessKey: 'dummy-secret-key'
+};
+
 export class S3ClientManager {
     private static instance: S3ClientManager | null = null;
     private client: S3 | null;
     private lastUsed: number;
-    private readonly MAX_IDLE_TIME = 5 * 60 * 1000; // 5 minutes
+    private readonly MAX_IDLE_TIME: number;
 
     private constructor() {
-        this.client = new S3({
-            accessKeyId: config.aws.accessKeyId,
-            secretAccessKey: config.aws.secretAccessKey,
-            region: config.aws.region,
-            maxRetries: 3,
+        this.MAX_IDLE_TIME = config?.aws?.s3?.maxIdleTime ?? DEFAULT_S3_CONFIG.maxIdleTime;
+        this.client = this.createS3Client();
+        this.lastUsed = Date.now();
+    }
+
+    private createS3Client(): S3 {
+        const s3Config = {
+            accessKeyId: config?.aws?.accessKeyId || DEFAULT_S3_CONFIG.accessKeyId,
+            secretAccessKey: config?.aws?.secretAccessKey || DEFAULT_S3_CONFIG.secretAccessKey,
+            region: config?.aws?.region || DEFAULT_S3_CONFIG.region,
+            maxRetries: config?.aws?.s3?.maxRetries ?? DEFAULT_S3_CONFIG.maxRetries,
             httpOptions: {
-                timeout: 5000,
-                connectTimeout: 5000,
+                timeout: config?.aws?.s3?.timeout ?? DEFAULT_S3_CONFIG.timeout,
+                connectTimeout: config?.aws?.s3?.connectTimeout ?? DEFAULT_S3_CONFIG.connectTimeout,
                 agent: new Agent({
-                    maxSockets: 10
+                    maxSockets: config?.aws?.s3?.maxSockets ?? DEFAULT_S3_CONFIG.maxSockets
                 })
             }
-        });
-        this.lastUsed = Date.now();
+        };
+
+        if (!config?.aws?.accessKeyId || !config?.aws?.secretAccessKey) {
+            console.warn('S3ClientManager: Using default configuration values. This is not recommended for production use.');
+        }
+
+        return new S3(s3Config);
     }
 
     public static getInstance(): S3ClientManager {
@@ -36,19 +59,7 @@ export class S3ClientManager {
 
     public getClient(): S3 {
         if (!this.client) {
-            this.client = new S3({
-                accessKeyId: config.aws.accessKeyId,
-                secretAccessKey: config.aws.secretAccessKey,
-                region: config.aws.region,
-                maxRetries: 3,
-                httpOptions: {
-                    timeout: 5000,
-                    connectTimeout: 5000,
-                    agent: new Agent({
-                        maxSockets: 10
-                    })
-                }
-            });
+            this.client = this.createS3Client();
         }
         this.lastUsed = Date.now();
         return this.client;
