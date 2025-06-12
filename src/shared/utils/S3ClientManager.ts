@@ -1,7 +1,7 @@
 // src/shared/utils/S3ClientManager.ts
 import { S3 } from 'aws-sdk';
 import { Agent } from 'https';
-import config from '@configs/config';
+import config from '@shared/configs/awsConfig';
 export type { S3 } from 'aws-sdk';
 
 // Default values for S3 configuration
@@ -23,27 +23,27 @@ export class S3ClientManager {
     private readonly MAX_IDLE_TIME: number;
 
     private constructor() {
-        this.MAX_IDLE_TIME = config?.aws?.s3?.maxIdleTime ?? DEFAULT_S3_CONFIG.maxIdleTime;
+        this.MAX_IDLE_TIME = config?.s3?.maxIdleTime ?? DEFAULT_S3_CONFIG.maxIdleTime;
         this.client = this.createS3Client();
         this.lastUsed = Date.now();
     }
 
     private createS3Client(): S3 {
         const s3Config = {
-            accessKeyId: config?.aws?.accessKeyId || DEFAULT_S3_CONFIG.accessKeyId,
-            secretAccessKey: config?.aws?.secretAccessKey || DEFAULT_S3_CONFIG.secretAccessKey,
-            region: config?.aws?.region || DEFAULT_S3_CONFIG.region,
-            maxRetries: config?.aws?.s3?.maxRetries ?? DEFAULT_S3_CONFIG.maxRetries,
+            accessKeyId: config?.accessKeyId || DEFAULT_S3_CONFIG.accessKeyId,
+            secretAccessKey: config?.secretAccessKey || DEFAULT_S3_CONFIG.secretAccessKey,
+            region: config?.region || DEFAULT_S3_CONFIG.region,
+            maxRetries: config?.s3?.maxRetries ?? DEFAULT_S3_CONFIG.maxRetries,
             httpOptions: {
-                timeout: config?.aws?.s3?.timeout ?? DEFAULT_S3_CONFIG.timeout,
-                connectTimeout: config?.aws?.s3?.connectTimeout ?? DEFAULT_S3_CONFIG.connectTimeout,
+                timeout: config?.s3?.timeout ?? DEFAULT_S3_CONFIG.timeout,
+                connectTimeout: config?.s3?.connectTimeout ?? DEFAULT_S3_CONFIG.connectTimeout,
                 agent: new Agent({
-                    maxSockets: config?.aws?.s3?.maxSockets ?? DEFAULT_S3_CONFIG.maxSockets
+                    maxSockets: config?.s3?.maxSockets ?? DEFAULT_S3_CONFIG.maxSockets
                 })
             }
         };
 
-        if (!config?.aws?.accessKeyId || !config?.aws?.secretAccessKey) {
+        if (!config?.accessKeyId || !config?.secretAccessKey) {
             console.warn('S3ClientManager: Using default configuration values. This is not recommended for production use.');
         }
 
