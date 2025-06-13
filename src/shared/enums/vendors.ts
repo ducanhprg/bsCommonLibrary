@@ -9,6 +9,7 @@ export enum Vendors {
     VENDOR_PYLON = 'vendor_pylon',
     VENDOR_GDEB = 'vendor_gdeb',
     VALIDATOR_SERVICE = 'validator',
+    VENDOR_GDEC = 'vendor_gdec',
 }
 
 export const VENDOR_STATUS: Record<Vendors, boolean> = {
@@ -22,4 +23,5 @@ export const VENDOR_STATUS: Record<Vendors, boolean> = {
     [Vendors.VENDOR_PYLON]: false,
     [Vendors.VENDOR_GDEB]: false,
     [Vendors.VALIDATOR_SERVICE]: true,
+    [Vendors.VENDOR_GDEC]: true,
 };
