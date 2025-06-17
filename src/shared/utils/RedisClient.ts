@@ -573,6 +573,7 @@ export const incrementHashField = async (
   value: number = 1
 ): Promise<number> => {
   try {
+    console.log(`🔄 Incrementing hash field: ${hashKey} - ${field} - ${value}`);
     const newValue = await redisClient.hincrby(hashKey, field, value);
     return newValue;
   } catch (error) {
