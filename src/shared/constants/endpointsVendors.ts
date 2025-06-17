@@ -142,4 +142,27 @@ export const ENDPOINTS : any[] = [
       cancelOrderEndpoint : "http://ioteasy.tpddns.cn:9102/api/gts/VoidShipment",
       getLabelEndpoint : "http://ioteasy.tpddns.cn:9102/api/gts/ShippingLabel",
     },
+    {
+      // api document -> https://www.showdoc.com.cn/IOTEasy/4410471878010502
+      // client_id 账号：Dev
+      // secret 密码：Ml4eYCu6PI6z
+      name: 'Gde_C',
+      environment: 'production',
+      apiKey: '',
+      vendorDomain : "http://dragon.iot-easy.cn",
+      tokenEndpoint : "http://authorization.iot-easy.cn/connect/token",
+      createOrderEndpoint : "http://dragon.iot-easy.cn/api/gts/ShippingLabel",
+      cancelOrderEndpoint : "http://dragon.iot-easy.cn/api/gts/VoidShipment",
+      getLabelEndpoint : "http://dragon.iot-easy.cn/api/gts/ShippingLabel",
+    },
+    {
+      name: 'Gde_C',
+      environment: 'development',
+      apiKey: '',
+      vendorDomain : "http://ioteasy.tpddns.cn:9102",
+      tokenEndpoint : "http://sandbox.authorization.iot-easy.cn/connect/token",
+      createOrderEndpoint : "http://ioteasy.tpddns.cn:9102/api/gts/ShippingLabel",
+      cancelOrderEndpoint : "http://ioteasy.tpddns.cn:9102/api/gts/VoidShipment",
+      getLabelEndpoint : "http://ioteasy.tpddns.cn:9102/api/gts/ShippingLabel",
+    },
 ]
