@@ -63,6 +63,8 @@ export class RedisBalanceRepository implements BalanceRepositoryInterface {
             local newPending = pending
 
             if operationType == "progress_payment" then
+                print("Debug: available = ", available)
+                print("Debug: amount = ", amount)
                 if available < amount then
                     return {false, "Insufficient available balance", available}
                 end
