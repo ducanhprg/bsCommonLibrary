@@ -21,6 +21,7 @@ interface ShipFrom {
   send_city_locality: string;
   send_country_code: string;
   send_zip4_code: string;
+  send_zip5_code: string;
   send_district: string;
   send_tax_no: string;
   send_id_no: string;
@@ -44,6 +45,7 @@ interface ShipTo {
   recv_city_locality: string;
   recv_country_code: string;
   recv_zip4_code: string;
+  recv_zip5_code: string;
   recv_districtl: string;
   recv_tax_no: string;
   recv_id_no: string;
