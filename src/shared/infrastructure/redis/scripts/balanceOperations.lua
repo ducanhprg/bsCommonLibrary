@@ -49,8 +49,6 @@ local newPending = pending
 
 if operationType == "progress_payment" then
     -- Check if sufficient funds available
-    print("Debug: available = ", available)
-    print("Debug: amount = ", amount)
     if available < amount then
         return {false, "Insufficient available balance", available}
     end
