@@ -52,7 +52,10 @@ export class BalanceService {
         }
 
         if (amount > existingBalance.totalFundAvailable) {
-            console.log('Insufficient funds');
+            console.log('Insufficient funds', [
+                existingBalance.totalFundAvailable,
+                amount
+            ]);
             return false;
         }
 
