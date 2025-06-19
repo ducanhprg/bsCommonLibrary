@@ -52,6 +52,15 @@ export class BalanceService {
         }
 
         if (amount > existingBalance.totalFundAvailable) {
+            console.log('Insufficient funds', [
+                existingBalance.totalFundAvailable,
+                amount,
+                existingBalance.availableBalance,
+                existingBalance.creditLimit,
+                existingBalance.currentBalance,
+                existingBalance.pendingTransactionAmount,
+                existingBalance.version
+            ]);
             return false;
         }
 
