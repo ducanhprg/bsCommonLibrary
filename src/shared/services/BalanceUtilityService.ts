@@ -27,28 +27,18 @@ export class BalanceUtilityService {
     async initializeBalance(dbprefix: string, database: string): Promise<Balance> {
         const balanceInfo = await this.getAccountLatestOpeningBalance(dbprefix, database);
 
+        console.log('111 - balanceInfo', balanceInfo);
+
         if (!balanceInfo) {
             throw new Error('No opening balance found for the account');
         }
 
-        const startDate = new Date(balanceInfo.report_date);
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-        yesterday.setHours(0, 0, 0, 0);
+        // Get total credit and debit amounts for all transactions after the report_date
+        const creditAmount = await this.getTransactionSumAfterDate('cr', balanceInfo.report_date, balanceInfo.customer_branch_id, dbprefix, database) || 0;
+        const debitAmount = await this.getTransactionSumAfterDate('db', balanceInfo.report_date, balanceInfo.customer_branch_id, dbprefix, database) || 0;
 
-        const processingDate = new Date(startDate);
-        let finalBalance = balanceInfo.opening_balance;
-
-        while (processingDate <= yesterday) {
-            const dateStr = processingDate.toISOString().split('T')[0];
-
-            const creditAmount = await this.getTransactionSumByDate('cr', dateStr, balanceInfo.customer_branch_id, dbprefix, database) || 0;
-            const debitAmount = await this.getTransactionSumByDate('db', dateStr, balanceInfo.customer_branch_id, dbprefix, database) || 0;
-
-            finalBalance = finalBalance - creditAmount + debitAmount;
-
-            processingDate.setDate(processingDate.getDate() + 1);
-        }
+        // Calculate final balance: opening_balance - credit + debit
+        const finalBalance = balanceInfo.opening_balance - creditAmount + debitAmount;
 
         const balance: Balance = {
             dbprefix: dbprefix,
@@ -216,6 +206,33 @@ export class BalanceUtilityService {
             return parseFloat(result?.total) || 0;
         } catch (error) {
             console.error('Error fetching transaction sum by date:', error);
+            throw new Error(`Failed to fetch transaction sum: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+    }
+
+    private async getTransactionSumAfterDate(
+        crdb: 'cr' | 'db',
+        date: string,
+        customerBranchId: string,
+        dbprefix: string,
+        database: string
+    ): Promise<number> {
+        try {
+            const { accountLedgerRepo } = await this.getRepositories(dbprefix, database);
+
+            // Use QueryBuilder for complex aggregation with date filtering
+            const result = await accountLedgerRepo
+                .createQueryBuilder('ledger')
+                .select('COALESCE(SUM(ledger.amount), 0)', 'total')
+                .where('ledger.customerBranchId = :customerBranchId', { customerBranchId: parseInt(customerBranchId) })
+                .andWhere('ledger.crdb = :crdb', { crdb })
+                .andWhere('ledger.trxDate > :date', { date })
+                .andWhere('ledger.status = :status', { status: '1' })
+                .getRawOne();
+
+            return parseFloat(result?.total) || 0;
+        } catch (error) {
+            console.error('Error fetching transaction sum after date:', error);
             throw new Error(`Failed to fetch transaction sum: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
     }
