@@ -26,9 +26,7 @@ export class BalanceUtilityService {
 
     async initializeBalance(dbprefix: string, database: string): Promise<Balance> {
         const balanceInfo = await this.getAccountLatestOpeningBalance(dbprefix, database);
-
-        console.log('111 - balanceInfo', balanceInfo);
-
+        
         if (!balanceInfo) {
             throw new Error('No opening balance found for the account');
         }
