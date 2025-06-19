@@ -40,6 +40,7 @@ export class BalanceService {
 
         if (!existingBalance) {
             try {
+                console.log('111 - Initializing balance');
                 await this.utilityService.initializeBalance(dbprefix, database);
                 existingBalance = await this.repository.getBalance(dbprefix);
             } catch (error) {
