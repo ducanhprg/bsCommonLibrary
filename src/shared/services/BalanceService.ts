@@ -50,8 +50,17 @@ export class BalanceService {
         if (!existingBalance) {
             throw new Error('Balance not found after initialization');
         }
-
+        console.log('Progress payment', [
+            existingBalance.totalFundAvailable,
+            amount,
+            existingBalance.availableBalance,
+            existingBalance.creditLimit,
+            existingBalance.currentBalance,
+            existingBalance.pendingTransactionAmount,
+            existingBalance.version
+        ]);
         if (amount > existingBalance.totalFundAvailable) {
+            console.log('Insufficient funds');
             return false;
         }
 
