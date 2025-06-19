@@ -84,7 +84,7 @@ else
 end
 
 -- Validate new values
-if newCurrent < 0 or newAvailable < 0 or newTotalFund < 0 or newPending < 0 then
+if newTotalFund < 0 or newPending < 0 then
     return {false, "Operation would result in negative balance"}
 end
 
