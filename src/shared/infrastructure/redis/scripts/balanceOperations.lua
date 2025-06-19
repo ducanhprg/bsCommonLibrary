@@ -49,7 +49,7 @@ local newPending = pending
 
 if operationType == "progress_payment" then
     -- Check if sufficient funds available
-    if available < amount then
+    if newTotalFund < amount then
         return {false, "Insufficient available balance", available}
     end
     newAvailable = available - amount

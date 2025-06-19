@@ -63,7 +63,7 @@ export class RedisBalanceRepository implements BalanceRepositoryInterface {
             local newPending = pending
 
             if operationType == "progress_payment" then
-                if available < amount then
+                if newTotalFund < amount then
                     return {false, "Insufficient available balance", available}
                 end
                 newAvailable = available - amount
