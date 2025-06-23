@@ -70,7 +70,9 @@ export class PrintLabelRequest {
                 service_type_code: metaRateSearch.service_type_code,
                 address_clarification: metaParcelRequestItem.address_clarification,
                 shipping_date: metaParcelRequestItem.input_shipping_date,
-                packaging_type: metaParcelRequestItem.input_packaging_type
+                packaging_type: metaParcelRequestItem.input_packaging_type,
+                actual_service_code: metaParcelRequestItem.actual_service_code,
+                actual_service_type_id: metaParcelRequestItem.actual_service_type_id
             };
 
             let packageContents = await this.getPackageContent(keyParcelRequestItem);
