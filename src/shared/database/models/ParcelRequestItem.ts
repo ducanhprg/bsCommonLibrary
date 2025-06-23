@@ -67,6 +67,8 @@ interface ShippingLane {
   address_clarification: string;
   shipping_date: any;
   packaging_type: string;
+  actual_service_code: string;
+  actual_service_type_id: string;
 }
 
 interface CustomerReference {
