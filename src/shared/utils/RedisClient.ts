@@ -160,7 +160,6 @@ export const getHashFieldValue = async (
   field: string
 ): Promise<string | null> => {
   if (!hashKey || !field) {
-    console.log("⚠️ Invalid parameters. Hash key and field are required.");
     return null;
   }
 
