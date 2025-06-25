@@ -61,7 +61,11 @@ export class PrintLabelRequest {
                 weight_unit: metaParcelRequestItem.weight_unit,
                 dimension_unit: metaParcelRequestItem.dimension_unit,
                 chargeable_weight: metaRateSearchItem.chargeable_weight,
-                chargeable_weight_unit: metaRateSearchItem.chargeable_weight_unit
+                chargeable_weight_unit: metaRateSearchItem.chargeable_weight_unit,
+                length_collection: JSON.parse(metaParcelRequestItem.dimension_json).length,
+                width_collection: JSON.parse(metaParcelRequestItem.dimension_json).width,
+                height_collection: JSON.parse(metaParcelRequestItem.dimension_json).height,
+                weight_collection: JSON.parse(metaParcelRequestItem.weight_json)
             };
             let shippingLane = {
                 departure_hub: metaRateSearch.departure_hub,
