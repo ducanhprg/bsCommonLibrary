@@ -169,11 +169,8 @@ export const getHashFieldValue = async (
 
     if (value === null) {
       console.log(`⚠️ Field '${field}' not found in Hash: ${hashKey}`);
-    } else {
-      console.log(
-        `✅ Found value for '${field}' in Hash '${hashKey}': ${value}`
-      );
-    }
+    } 
+    
     return value;
   } catch (error) {
     console.error(
