@@ -164,11 +164,11 @@ export const getHashFieldValue = async (
   }
 
   try {
-    console.log(`🔍 Fetching field '${field}' from Hash: ${hashKey}`);
+   
     const value = await redisClient.hget(hashKey, field);
 
     if (value === null) {
-      console.log(`⚠️ Field '${field}' not found in Hash: ${hashKey}`);
+     
     } 
     
     return value;
@@ -190,12 +190,10 @@ export const updateOrCreateHashFields = async (
   fields: Record<string, any>
 ) => {
   if (!hashKey || Object.keys(fields).length === 0) {
-    console.log("⚠️ Invalid parameters. Hash key and fields are required.");
     return;
   }
 
   try {
-    console.log(`🔄 Updating/Creating fields in Hash: ${hashKey}`);
 
     const pipeline = redisClient.pipeline();
 
@@ -204,7 +202,7 @@ export const updateOrCreateHashFields = async (
     });
 
     await pipeline.exec();
-    console.log(`✅ Successfully updated/created fields in Hash: ${hashKey}`);
+   
   } catch (error) {
     console.error(
       `❌ Error updating/creating Hash fields in ${hashKey}:`,
@@ -250,7 +248,6 @@ export const addMembersToSet = async (
 ): Promise<void> => {
   if (members.length === 0) return;
   await redisClient.sadd(setKey, ...members);
-  console.log(`✅ Added ${members.length} members to SET: ${setKey}`);
 };
 
 /**
@@ -295,9 +292,7 @@ export const isMemberInSet = async (
 export const publishMessage = async (channel: string, message: string) => {
   try {
     await redisClient.publish(channel, message);
-    console.log(
-      `📢 [PUBLISH] Sent message: "${message}" to channel "${channel}"`
-    );
+    
   } catch (error) {
     console.error("Error publishing message:", error);
   }
@@ -615,7 +610,6 @@ export const listenForMessage = async (
         clearTimeout(timer);
         isResolved = true;
         redisAdminClient.off("message", messageHandler);
-        console.log(`📩 Received message: "${message}"`);
         resolve(message);
       }
     };
@@ -625,9 +619,6 @@ export const listenForMessage = async (
         clearTimeout(timer);
         reject(new Error(`❌ Lỗi khi subscribe Redis: ${err.message}`));
       } else {
-        console.log(
-          `👂 Listening on Redis channel: ${channel} (Expecting: "${expectedMessage}")`
-        );
         redisAdminClient.on("message", messageHandler);
       }
     });
@@ -746,7 +737,7 @@ export const incrementHashField = async (
   value: number = 1
 ): Promise<number> => {
   try {
-    console.log(`🔄 Incrementing hash field: ${hashKey} - ${field} - ${value}`);
+    
     const newValue = await redisClient.hincrby(hashKey, field, value);
     return newValue;
   } catch (error) {
