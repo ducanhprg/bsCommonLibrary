@@ -1,15 +1,34 @@
+interface DimensionCollection {
+  cm: number;
+  ft: number;
+  in: number;
+}
+
+interface WeightCollection {
+  g: number;
+  kg: number;
+  lb: number;
+  oz: number;
+}
+
 interface ParcelSize {
   length_plus_girth: number;
   girth: number;
   cubic_ft: number;
-  length:number;
-  width:number;
-  height:number;
-  weight:number;
+  length: number;
+  width: number;
+  height: number;
+  weight: number;
   dimension_unit: string;
   weight_unit: string;
   chargeable_weight: number;
   chargeable_weight_unit: string;
+  // Dimension collections for each dimension
+  length_collection?: DimensionCollection;
+  width_collection?: DimensionCollection;
+  height_collection?: DimensionCollection;
+  // Weight collection
+  weight_collection?: WeightCollection;
 }
 
 interface ShipFrom {
@@ -67,6 +86,8 @@ interface ShippingLane {
   address_clarification: string;
   shipping_date: any;
   packaging_type: string;
+  actual_service_code: string;
+  actual_service_type_id: string;
 }
 
 interface CustomerReference {
