@@ -164,16 +164,13 @@ export const getHashFieldValue = async (
   }
 
   try {
-    console.log(`🔍 Fetching field '${field}' from Hash: ${hashKey}`);
+   
     const value = await redisClient.hget(hashKey, field);
 
     if (value === null) {
-      console.log(`⚠️ Field '${field}' not found in Hash: ${hashKey}`);
-    } else {
-      console.log(
-        `✅ Found value for '${field}' in Hash '${hashKey}': ${value}`
-      );
-    }
+     
+    } 
+    
     return value;
   } catch (error) {
     console.error(
@@ -193,12 +190,10 @@ export const updateOrCreateHashFields = async (
   fields: Record<string, any>
 ) => {
   if (!hashKey || Object.keys(fields).length === 0) {
-    console.log("⚠️ Invalid parameters. Hash key and fields are required.");
     return;
   }
 
   try {
-    console.log(`🔄 Updating/Creating fields in Hash: ${hashKey}`);
 
     const pipeline = redisClient.pipeline();
 
@@ -207,7 +202,7 @@ export const updateOrCreateHashFields = async (
     });
 
     await pipeline.exec();
-    console.log(`✅ Successfully updated/created fields in Hash: ${hashKey}`);
+   
   } catch (error) {
     console.error(
       `❌ Error updating/creating Hash fields in ${hashKey}:`,
@@ -253,7 +248,6 @@ export const addMembersToSet = async (
 ): Promise<void> => {
   if (members.length === 0) return;
   await redisClient.sadd(setKey, ...members);
-  console.log(`✅ Added ${members.length} members to SET: ${setKey}`);
 };
 
 /**
@@ -298,9 +292,7 @@ export const isMemberInSet = async (
 export const publishMessage = async (channel: string, message: string) => {
   try {
     await redisClient.publish(channel, message);
-    console.log(
-      `📢 [PUBLISH] Sent message: "${message}" to channel "${channel}"`
-    );
+    
   } catch (error) {
     console.error("Error publishing message:", error);
   }
@@ -342,6 +334,124 @@ const fetchBatchData = async (keys: string[]): Promise<RedisHashData[]> => {
       error || !data ? {} : (data as RedisHashData)
     ) || []
   );
+};
+
+type ResultKeyType = 'rate_search_item_id' | 'rate_search_id' | 'parcel_request_item_id';
+
+interface ParentDataWithKeys {
+  data: Record<string, ParentData | null>;
+  transformToKey: (keyType: ResultKeyType) => Record<string, ParentData | null>;
+}
+
+export const getParentDataWithKeyTransform = async (
+  itemKeys: string[],
+  rateSearchItemPrefix: string = "rate_search_items",
+  rateSearchPrefix: string = "rate_searches",
+  parcelRequestPrefix: string = "parcel_request_items"
+): Promise<ParentDataWithKeys> => {
+  if (!itemKeys.length) return { 
+    data: {},
+    transformToKey: () => ({})
+  };
+
+  const originalData: Record<string, { 
+    parentData: ParentData | null; 
+    rateSearchId: string | null; 
+    parcelRequestItemId: string | null;
+    originalKey: string;
+  }> = {};
+
+  try {
+    const rateSearchIds = await fetchRateSearchIds(
+      itemKeys,
+      rateSearchItemPrefix
+    );
+    const rateSearchKeys = rateSearchIds
+      .map((id, i) => (id ? `${rateSearchPrefix}:${id}` : null))
+      .filter(Boolean) as string[];
+    const rateSearchItemKeys = itemKeys.map(
+      (key) => `${rateSearchItemPrefix}:${key}`
+    );
+
+    const [rateSearchDataArray, rateSearchItemDataArray] = await Promise.all([
+      fetchBatchData(rateSearchKeys),
+      fetchBatchData(rateSearchItemKeys),
+    ]);
+
+    const parcelRequestKeys = rateSearchDataArray
+      .map((data) => {
+        const id = data["parcel_request_item_id"];
+        return id ? `${parcelRequestPrefix}:${id}` : null;
+      })
+      .filter(Boolean) as string[];
+
+    const parcelDataArray = await fetchBatchData(parcelRequestKeys);
+
+    let parcelIndex = 0;
+    itemKeys.forEach((itemKey, index) => {
+      const rateSearchData = rateSearchDataArray[index];
+      const rateSearchItemData = rateSearchItemDataArray[index];
+      const parcelData = rateSearchData && rateSearchData["parcel_request_item_id"]
+        ? parcelDataArray[parcelIndex++]
+        : {};
+
+      const parentData = rateSearchData && Object.keys(rateSearchData).length > 0
+        ? {
+            rate_search_item: rateSearchItemData,
+            rate_search: rateSearchData,
+            parcel_request_item: parcelData,
+          }
+        : null;
+
+      originalData[itemKey] = {
+        parentData,
+        rateSearchId: rateSearchIds[index],
+        parcelRequestItemId: rateSearchData ? rateSearchData["parcel_request_item_id"] : null,
+        originalKey: itemKey
+      };
+    });
+
+    const transformToKey = (keyType: ResultKeyType): Record<string, ParentData | null> => {
+      const results: Record<string, ParentData | null> = {};
+      
+      Object.values(originalData).forEach(({ parentData, rateSearchId, parcelRequestItemId, originalKey }) => {
+        if (!parentData) {
+          results[originalKey] = null;
+          return;
+        }
+
+        let resultKey = originalKey; // Default fallback
+        
+        switch (keyType) {
+          case 'rate_search_item_id':
+            resultKey = originalKey; // Use original rate search item ID
+            break;
+          case 'rate_search_id':
+            resultKey = rateSearchId || originalKey;
+            break;
+          case 'parcel_request_item_id':
+            resultKey = parcelRequestItemId || originalKey;
+            break;
+          default:
+            resultKey = originalKey;
+        }
+
+        results[resultKey] = parentData;
+      });
+
+      return results;
+    };
+
+    return {
+      data: transformToKey('rate_search_item_id'), // Default key structure
+      transformToKey
+    };
+
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(`Error in getParentDataWithKeyTransform: ${errorMessage}`);
+    throw new Error(`Failed to fetch parent data: ${errorMessage}`);
+  }
 };
 
 export const getParentData = async (
@@ -411,182 +521,7 @@ export const getParentData = async (
   }
 };
 
-const fetchRateSearchByParcelId = async (
-  parcelIds: string[],
-  rateSearchPrefix: string
-): Promise<(string | null)[]> => {
-  if (!parcelIds.length) return [];
-  
-  // We need to scan through rate_searches to find ones with matching parcel_request_item_id
-  const rateSearchIds: (string | null)[] = [];
-  
-  for (const parcelId of parcelIds) {
-    let found = false;
-    let cursor = "0";
-    
-    do {
-      const [nextCursor, keys] = await redisClient.scan(
-        cursor,
-        "MATCH",
-        `${rateSearchPrefix}:*`,
-        "COUNT",
-        100
-      );
-      cursor = nextCursor;
-      
-      if (keys.length > 0) {
-        const pipeline = redisClient.pipeline();
-        keys.forEach(key => pipeline.hget(key, "parcel_request_item_id"));
-        const responses = await pipeline.exec();
-        
-        for (let i = 0; i < keys.length; i++) {
-          const [error, result] = responses![i];
-          if (!error && result === parcelId) {
-            // Extract the ID from the key (remove prefix)
-            const rateSearchId = keys[i].replace(`${rateSearchPrefix}:`, "");
-            rateSearchIds.push(rateSearchId);
-            found = true;
-            break;
-          }
-        }
-      }
-      
-      if (found) break;
-    } while (cursor !== "0");
-    
-    if (!found) {
-      rateSearchIds.push(null);
-    }
-  }
-  
-  return rateSearchIds;
-};
 
-const fetchRateSearchItemsByRateSearchId = async (
-  rateSearchIds: (string | null)[],
-  rateSearchItemPrefix: string
-): Promise<(string | null)[]> => {
-  if (!rateSearchIds.length) return [];
-  
-  const rateSearchItemIds: (string | null)[] = [];
-  
-  for (const rateSearchId of rateSearchIds) {
-    if (!rateSearchId) {
-      rateSearchItemIds.push(null);
-      continue;
-    }
-    
-    let found = false;
-    let cursor = "0";
-    
-    do {
-      const [nextCursor, keys] = await redisClient.scan(
-        cursor,
-        "MATCH",
-        `${rateSearchItemPrefix}:*`,
-        "COUNT",
-        100
-      );
-      cursor = nextCursor;
-      
-      if (keys.length > 0) {
-        const pipeline = redisClient.pipeline();
-        keys.forEach(key => pipeline.hget(key, "rate_search_id"));
-        const responses = await pipeline.exec();
-        
-        for (let i = 0; i < keys.length; i++) {
-          const [error, result] = responses![i];
-          if (!error && result === rateSearchId) {
-            // Extract the ID from the key (remove prefix)
-            const rateSearchItemId = keys[i].replace(`${rateSearchItemPrefix}:`, "");
-            rateSearchItemIds.push(rateSearchItemId);
-            found = true;
-            break;
-          }
-        }
-      }
-      
-      if (found) break;
-    } while (cursor !== "0");
-    
-    if (!found) {
-      rateSearchItemIds.push(null);
-    }
-  }
-  
-  return rateSearchItemIds;
-};
-
-export const getParentDataByParcelId = async (
-  parcelIds: string[],
-  rateSearchItemPrefix: string = "rate_search_items",
-  rateSearchPrefix: string = "rate_searches", 
-  parcelRequestPrefix: string = "parcel_request_items"
-): Promise<Record<string, ParentData | null>> => {
-  if (!parcelIds.length) return {};
-
-  const results: Record<string, ParentData | null> = {};
-
-  try {
-    // First, get parcel request item data
-    const parcelRequestKeys = parcelIds.map(id => `${parcelRequestPrefix}:${id}`);
-    const parcelDataArray = await fetchBatchData(parcelRequestKeys);
-
-    // Find rate searches that reference these parcel IDs
-    const rateSearchIds = await fetchRateSearchByParcelId(parcelIds, rateSearchPrefix);
-    
-    // Get rate search data
-    const rateSearchKeys = rateSearchIds
-      .map(id => id ? `${rateSearchPrefix}:${id}` : null)
-      .filter(Boolean) as string[];
-    const rateSearchDataArray = await fetchBatchData(rateSearchKeys);
-
-    // Find rate search items that reference these rate search IDs
-    const rateSearchItemIds = await fetchRateSearchItemsByRateSearchId(rateSearchIds, rateSearchItemPrefix);
-    
-    // Get rate search item data
-    const rateSearchItemKeys = rateSearchItemIds
-      .map(id => id ? `${rateSearchItemPrefix}:${id}` : null)
-      .filter(Boolean) as string[];
-    const rateSearchItemDataArray = await fetchBatchData(rateSearchItemKeys);
-
-    // Build results
-    let rateSearchIndex = 0;
-    let rateSearchItemIndex = 0;
-    
-    parcelIds.forEach((parcelId, index) => {
-      const parcelData = parcelDataArray[index];
-      const rateSearchId = rateSearchIds[index];
-      const rateSearchItemId = rateSearchItemIds[index];
-      
-      let rateSearchData = {};
-      let rateSearchItemData = {};
-      
-      if (rateSearchId) {
-        rateSearchData = rateSearchDataArray[rateSearchIndex++] || {};
-      }
-      
-      if (rateSearchItemId) {
-        rateSearchItemData = rateSearchItemDataArray[rateSearchItemIndex++] || {};
-      }
-
-      results[parcelId] = 
-        Object.keys(parcelData).length > 0
-          ? {
-              rate_search_item: rateSearchItemData,
-              rate_search: rateSearchData,
-              parcel_request_item: parcelData,
-            }
-          : null;
-    });
-
-    return results;
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error(`Error in getParentDataByParcelId: ${errorMessage}`);
-    throw new Error(`Failed to fetch parent data by parcel ID: ${errorMessage}`);
-  }
-};
 
 /**
  *
@@ -618,7 +553,6 @@ export const listenForMessage = async (
         clearTimeout(timer);
         isResolved = true;
         redisAdminClient.off("message", messageHandler);
-        console.log(`📩 Received message: "${message}"`);
         resolve(message);
       }
     };
@@ -628,9 +562,6 @@ export const listenForMessage = async (
         clearTimeout(timer);
         reject(new Error(`❌ Lỗi khi subscribe Redis: ${err.message}`));
       } else {
-        console.log(
-          `👂 Listening on Redis channel: ${channel} (Expecting: "${expectedMessage}")`
-        );
         redisAdminClient.on("message", messageHandler);
       }
     });
@@ -749,7 +680,7 @@ export const incrementHashField = async (
   value: number = 1
 ): Promise<number> => {
   try {
-    console.log(`🔄 Incrementing hash field: ${hashKey} - ${field} - ${value}`);
+    
     const newValue = await redisClient.hincrby(hashKey, field, value);
     return newValue;
   } catch (error) {
