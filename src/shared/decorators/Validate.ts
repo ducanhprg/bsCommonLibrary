@@ -13,9 +13,10 @@ export interface ValidationRule {
     pattern?: RegExp;
     custom?: (value: any) => boolean;
     message?: string;
+    source?: 'body' | 'query' | 'params'; // Add source specification
 }
 
-export function Validate(rules: ValidationRule[]) {
+export function Validate(rules: ValidationRule[], defaultSource: 'body' | 'query' | 'params' = 'body') {
     return function (target: any, propertyKey: string, descriptor: PropertyDescriptor) {
         const originalMethod = descriptor.value;
 
@@ -24,7 +25,33 @@ export function Validate(rules: ValidationRule[]) {
                 const errors: Record<string, string[]> = {};
 
                 for (const rule of rules) {
-                    const value = req.body[rule.field];
+                    const source = rule.source || defaultSource;
+                    let value: any;
+                    
+                    // Get value from appropriate source
+                    switch (source) {
+                        case 'query':
+                            value = req.query[rule.field];
+                            break;
+                        case 'params':
+                            value = req.params[rule.field];
+                            break;
+                        case 'body':
+                        default:
+                            value = req.body[rule.field];
+                            break;
+                    }
+                    
+                    // Convert types for query/params (they come as strings)
+                    if ((source === 'query' || source === 'params') && value !== undefined && value !== null && value !== '') {
+                        if (rule.type === 'number') {
+                            const numValue = Number(value);
+                            value = isNaN(numValue) ? value : numValue;
+                        } else if (rule.type === 'boolean') {
+                            value = value === 'true' || value === '1';
+                        }
+                    }
+                    
                     const fieldErrors: string[] = [];
 
                     // Check required field
