@@ -11,6 +11,7 @@
     "emitDecoratorMetadata": true,
     "strictPropertyInitialization": true,
     "skipLibCheck": true,
+    "typeRoots": ["./src/types", "./node_modules/@types"],
     "paths": {
       "@src/*": ["src/*"],
       "@api/*": ["src/api/*"],
