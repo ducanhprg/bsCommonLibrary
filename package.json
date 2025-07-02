@@ -24,6 +24,7 @@
     "date-fns-tz": "^3.2.0",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
+    "fontkit": "^2.0.4",
     "fs-extra": "^11.3.0",
     "image-size": "^2.0.2",
     "ioredis": "^5.6.1",
