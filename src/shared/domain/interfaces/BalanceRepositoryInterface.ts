@@ -1,4 +1,4 @@
-import { Balance, BalanceOperation, BalanceOperationResult, BalanceSnapshot } from '../entities/Balance';
+import { Balance, BalanceOperation, BalanceOperationResult, BalanceSnapshot } from '@shared/domain/entities/Balance';
 
 export interface BalanceRepositoryInterface {
     /**
