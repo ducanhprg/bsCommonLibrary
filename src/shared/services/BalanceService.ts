@@ -6,11 +6,13 @@ import {
 } from '@shared/domain/entities/Balance';
 import { BalanceRepositoryInterface } from '@shared/domain/interfaces/BalanceRepositoryInterface';
 import { BalanceUtilityService } from './BalanceUtilityService';
+import { BalanceCleanupService } from './BalanceCleanupService';
 
 export interface BalanceServiceConfig {
     maxRetries?: number;
     retryDelayMs?: number;
     defaultCreditLimit?: number;
+    maxRetryDelayMs?: number; // Maximum delay cap for exponential backoff
 }
 
 export class BalanceService {
@@ -22,28 +24,99 @@ export class BalanceService {
         repository: BalanceRepositoryInterface,
         config: BalanceServiceConfig = {},
         private readonly tenantDatabasePrefix?: string,
-        private readonly tenantDatabaseName?: string
+        private readonly tenantDatabaseName?: string,
+        private readonly cleanupService?: BalanceCleanupService
     ) {
         this.repository = repository;
         this.config = {
             maxRetries: config.maxRetries ?? 3,
             retryDelayMs: config.retryDelayMs ?? 100,
-            defaultCreditLimit: config.defaultCreditLimit ?? 0
+            defaultCreditLimit: config.defaultCreditLimit ?? 0,
+            maxRetryDelayMs: config.maxRetryDelayMs ?? 5000 // Cap at 5 seconds
         };
         this.utilityService = new BalanceUtilityService(repository, tenantDatabasePrefix, tenantDatabaseName);
     }
 
     async progressPayment(dbprefix: string, database: string, amount: number, metadata?: Record<string, any>): Promise<boolean> {
+        // Validate required parameters
+        if (!database || database.trim() === '') {
+            throw new Error('Database parameter is required for progress payment operations');
+        }
+
+        return await this.executeBalanceOperation(
+            dbprefix,
+            database,
+            amount,
+            BalanceOperationType.PROGRESS_PAYMENT,
+            metadata,
+            true // requiresInitialization
+        );
+    }
+
+    async reversePayment(dbprefix: string, amount: number, metadata?: Record<string, any>): Promise<boolean> {
+        return await this.executeBalanceOperation(
+            dbprefix,
+            this.tenantDatabaseName || '', // Use tenant database name or empty string
+            amount,
+            BalanceOperationType.REVERSE_PAYMENT,
+            metadata,
+            false // doesn't require initialization
+        );
+    }
+
+    async completePayment(dbprefix: string, amount: number, metadata?: Record<string, any>): Promise<boolean> {
+        return await this.executeBalanceOperation(
+            dbprefix,
+            this.tenantDatabaseName || '', // Use tenant database name or empty string
+            amount,
+            BalanceOperationType.COMPLETE_PAYMENT,
+            metadata,
+            false // doesn't require initialization
+        );
+    }
+
+    async refundPayment(dbprefix: string, amount: number, metadata?: Record<string, any>): Promise<boolean> {
+        return await this.executeBalanceOperation(
+            dbprefix,
+            this.tenantDatabaseName || '', // Use tenant database name or empty string
+            amount,
+            BalanceOperationType.REFUND_PAYMENT,
+            metadata,
+            false // doesn't require initialization
+        );
+    }
+
+    private async executeBalanceOperation(
+        dbprefix: string,
+        database: string,
+        amount: number,
+        operationType: BalanceOperationType,
+        metadata?: Record<string, any>,
+        requiresInitialization: boolean = false
+    ): Promise<boolean> {
+        // Validate input parameters
+        if (!dbprefix || dbprefix.trim() === '') {
+            throw new Error('Database prefix is required');
+        }
+
         this.utilityService.validateAmount(amount);
 
         let existingBalance = await this.repository.getBalance(dbprefix);
 
+        // Handle balance initialization if needed
         if (!existingBalance) {
-            try {
-                await this.utilityService.initializeBalance(dbprefix, database);
-                existingBalance = await this.repository.getBalance(dbprefix);
-            } catch (error) {
-                throw new Error(`Failed to initialize balance: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            if (requiresInitialization) {
+                if (!database || database.trim() === '') {
+                    throw new Error('Database parameter is required for balance initialization');
+                }
+                try {
+                    await this.utilityService.initializeBalance(dbprefix, database);
+                    existingBalance = await this.repository.getBalance(dbprefix);
+                } catch (error) {
+                    throw new Error(`Failed to initialize balance: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                }
+            } else {
+                throw new Error(`Balance not found for user: ${dbprefix}. Please initialize balance first.`);
             }
         }
 
@@ -51,94 +124,95 @@ export class BalanceService {
             throw new Error('Balance not found after initialization');
         }
 
-        if (amount > existingBalance.totalFundAvailable) {
-            console.log('Insufficient funds', [
-                existingBalance.totalFundAvailable,
-                amount
-            ]);
+        // Validate balance for all operations
+        const validationResult = this.validateBalanceForOperation(operationType, amount, existingBalance);
+        if (!validationResult.isValid) {
+            console.log(`Operation validation failed: ${validationResult.reason}`, {
+                operationType,
+                amount,
+                currentBalance: existingBalance.currentBalance,
+                availableBalance: existingBalance.availableBalance,
+                totalFundAvailable: existingBalance.totalFundAvailable,
+                pendingTransactionAmount: existingBalance.pendingTransactionAmount
+            });
             return false;
         }
 
         const operation: BalanceOperation = {
             id: uuidv4(),
             dbprefix: dbprefix,
-            operationType: BalanceOperationType.PROGRESS_PAYMENT,
+            operationType,
             amount,
-            timestamp: new Date(),
+            timestamp: new Date(), // Fresh timestamp for each operation
             metadata
         };
 
         const result = await this.executeWithRetry(operation);
 
         if (!result.success) {
-            throw new Error(result.error || 'Progress payment operation failed');
+            throw new Error(result.error || `${operationType} operation failed`);
         }
+
+        // Schedule cleanup asynchronously to not block the main operation
+        this.scheduleCleanupIfNeeded(dbprefix, result.balance).catch(error => {
+            console.error(`Failed to schedule cleanup for ${dbprefix}:`, error);
+        });
 
         return true;
     }
 
-    async reversePayment(dbprefix: string, amount: number, metadata?: Record<string, any>): Promise<boolean> {
-        this.utilityService.validateAmount(amount);
+    private validateBalanceForOperation(
+        operationType: BalanceOperationType,
+        amount: number,
+        balance: any
+    ): { isValid: boolean; reason?: string } {
+        switch (operationType) {
+            case BalanceOperationType.PROGRESS_PAYMENT:
+                if (amount > balance.totalFundAvailable) {
+                    return {
+                        isValid: false,
+                        reason: `Insufficient funds: requested ${amount}, available ${balance.totalFundAvailable}`
+                    };
+                }
+                break;
 
-        const operation: BalanceOperation = {
-            id: uuidv4(),
-            dbprefix: dbprefix,
-            operationType: BalanceOperationType.REVERSE_PAYMENT,
-            amount,
-            timestamp: new Date(),
-            metadata
-        };
+            case BalanceOperationType.COMPLETE_PAYMENT:
+                if (amount > balance.pendingTransactionAmount) {
+                    return {
+                        isValid: false,
+                        reason: `Insufficient pending amount: requested ${amount}, pending ${balance.pendingTransactionAmount}`
+                    };
+                }
+                break;
 
-        const result = await this.executeWithRetry(operation);
+            case BalanceOperationType.REVERSE_PAYMENT:
+                if (amount > balance.pendingTransactionAmount) {
+                    return {
+                        isValid: false,
+                        reason: `Insufficient pending amount to reverse: requested ${amount}, pending ${balance.pendingTransactionAmount}`
+                    };
+                }
+                break;
 
-        if (!result.success) {
-            throw new Error(result.error || 'Reverse payment operation failed');
+            case BalanceOperationType.REFUND_PAYMENT:
+                if (amount > balance.pendingTransactionAmount) {
+                    return {
+                        isValid: false,
+                        reason: `Insufficient pending amount to refund: requested ${amount}, pending ${balance.pendingTransactionAmount}`
+                    };
+                }
+                break;
+
+            default:
+                return {
+                    isValid: false,
+                    reason: `Unknown operation type: ${operationType}`
+                };
         }
 
-        return true;
+        return { isValid: true };
     }
 
-    async completePayment(dbprefix: string, amount: number, metadata?: Record<string, any>): Promise<boolean> {
-        this.utilityService.validateAmount(amount);
-
-        const operation: BalanceOperation = {
-            id: uuidv4(),
-            dbprefix: dbprefix,
-            operationType: BalanceOperationType.COMPLETE_PAYMENT,
-            amount,
-            timestamp: new Date(),
-            metadata
-        };
-
-        const result = await this.executeWithRetry(operation);
-
-        if (!result.success) {
-            throw new Error(result.error || 'Complete payment operation failed');
-        }
-
-        return true;
-    }
-
-    async refundPayment(dbprefix: string, amount: number, metadata?: Record<string, any>): Promise<boolean> {
-        this.utilityService.validateAmount(amount);
-
-        const operation: BalanceOperation = {
-            id: uuidv4(),
-            dbprefix: dbprefix,
-            operationType: BalanceOperationType.REFUND_PAYMENT,
-            amount,
-            timestamp: new Date(),
-            metadata
-        };
-
-        const result = await this.executeWithRetry(operation);
-
-        if (!result.success) {
-            throw new Error(result.error || 'Refund payment operation failed');
-        }
-
-        return true;
-    }
     private async executeWithRetry(operation: BalanceOperation): Promise<BalanceOperationResult> {
         let lastError: string = '';
 
@@ -152,19 +226,30 @@ export class BalanceService {
 
                 lastError = result.error || 'Unknown error';
 
+                // Don't retry for business logic errors
                 if (lastError.includes('Insufficient') || lastError.includes('Invalid')) {
                     return result;
                 }
 
+                // Use exponential backoff for retries with maximum delay cap
                 if (attempt < this.config.maxRetries) {
-                    await this.delay(this.config.retryDelayMs * Math.pow(2, attempt));
+                    const delay = Math.min(
+                        this.config.retryDelayMs * Math.pow(2, attempt),
+                        this.config.maxRetryDelayMs
+                    );
+                    await this.delay(delay);
                 }
 
             } catch (error) {
                 lastError = error instanceof Error ? error.message : 'Unknown error';
 
+                // Use exponential backoff for retries with maximum delay cap
                 if (attempt < this.config.maxRetries) {
-                    await this.delay(this.config.retryDelayMs * Math.pow(2, attempt));
+                    const delay = Math.min(
+                        this.config.retryDelayMs * Math.pow(2, attempt),
+                        this.config.maxRetryDelayMs
+                    );
+                    await this.delay(delay);
                 }
             }
         }
@@ -179,6 +264,20 @@ export class BalanceService {
 
     private delay(ms: number): Promise<void> {
         return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    private async scheduleCleanupIfNeeded(dbprefix: string, balance?: any): Promise<void> {
+        if (this.cleanupService && balance) {
+            try {
+                await this.cleanupService.scheduleCleanupIfNeeded(
+                    dbprefix, 
+                    balance.pendingTransactionAmount ?? 0
+                );
+            } catch (error) {
+                // Log but don't throw - cleanup scheduling failures shouldn't block main operations
+                console.error(`Failed to schedule cleanup for ${dbprefix}:`, error);
+            }
+        }
     }
 
 }
