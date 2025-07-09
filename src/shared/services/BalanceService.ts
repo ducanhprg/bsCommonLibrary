@@ -12,7 +12,7 @@ export interface BalanceServiceConfig {
     maxRetries?: number;
     retryDelayMs?: number;
     defaultCreditLimit?: number;
-    cleanupRetryDelayMs?: number; // Delay when cleanup operations are detected
+    maxRetryDelayMs?: number; // Maximum delay cap for exponential backoff
 }
 
 export class BalanceService {
@@ -32,12 +32,17 @@ export class BalanceService {
             maxRetries: config.maxRetries ?? 3,
             retryDelayMs: config.retryDelayMs ?? 100,
             defaultCreditLimit: config.defaultCreditLimit ?? 0,
-            cleanupRetryDelayMs: config.cleanupRetryDelayMs ?? 2000
+            maxRetryDelayMs: config.maxRetryDelayMs ?? 5000 // Cap at 5 seconds
         };
         this.utilityService = new BalanceUtilityService(repository, tenantDatabasePrefix, tenantDatabaseName);
     }
 
     async progressPayment(dbprefix: string, database: string, amount: number, metadata?: Record<string, any>): Promise<boolean> {
+        // Validate required parameters
+        if (!database || database.trim() === '') {
+            throw new Error('Database parameter is required for progress payment operations');
+        }
+
         return await this.executeBalanceOperation(
             dbprefix,
             database,
@@ -51,7 +56,7 @@ export class BalanceService {
     async reversePayment(dbprefix: string, amount: number, metadata?: Record<string, any>): Promise<boolean> {
         return await this.executeBalanceOperation(
             dbprefix,
-            '', // database not needed for reverse operations
+            this.tenantDatabaseName || '', // Use tenant database name or empty string
             amount,
             BalanceOperationType.REVERSE_PAYMENT,
             metadata,
@@ -62,7 +67,7 @@ export class BalanceService {
     async completePayment(dbprefix: string, amount: number, metadata?: Record<string, any>): Promise<boolean> {
         return await this.executeBalanceOperation(
             dbprefix,
-            '', // database not needed for complete operations
+            this.tenantDatabaseName || '', // Use tenant database name or empty string
             amount,
             BalanceOperationType.COMPLETE_PAYMENT,
             metadata,
@@ -73,7 +78,7 @@ export class BalanceService {
     async refundPayment(dbprefix: string, amount: number, metadata?: Record<string, any>): Promise<boolean> {
         return await this.executeBalanceOperation(
             dbprefix,
-            '', // database not needed for refund operations
+            this.tenantDatabaseName || '', // Use tenant database name or empty string
             amount,
             BalanceOperationType.REFUND_PAYMENT,
             metadata,
@@ -89,30 +94,29 @@ export class BalanceService {
         metadata?: Record<string, any>,
         requiresInitialization: boolean = false
     ): Promise<boolean> {
+        // Validate input parameters
+        if (!dbprefix || dbprefix.trim() === '') {
+            throw new Error('Database prefix is required');
+        }
+
         this.utilityService.validateAmount(amount);
 
         let existingBalance = await this.repository.getBalance(dbprefix);
 
-        // Handle balance initialization with cleanup-aware logic
-        if (!existingBalance && requiresInitialization) {
-            try {
-                await this.utilityService.initializeBalance(dbprefix, database);
-                existingBalance = await this.repository.getBalance(dbprefix);
-            } catch (error) {
-                // If initialization fails, it might be due to cleanup operations
-                const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-                if (this.isCleanupRelatedError(errorMessage)) {
-                    // Wait for cleanup to complete and retry
-                    await this.delay(this.config.cleanupRetryDelayMs);
-                    try {
-                        await this.utilityService.initializeBalance(dbprefix, database);
-                        existingBalance = await this.repository.getBalance(dbprefix);
-                    } catch (retryError) {
-                        throw new Error(`Failed to initialize balance after cleanup: ${retryError instanceof Error ? retryError.message : 'Unknown error'}`);
-                    }
-                } else {
-                    throw new Error(`Failed to initialize balance: ${errorMessage}`);
+        // Handle balance initialization if needed
+        if (!existingBalance) {
+            if (requiresInitialization) {
+                if (!database || database.trim() === '') {
+                    throw new Error('Database parameter is required for balance initialization');
                 }
+                try {
+                    await this.utilityService.initializeBalance(dbprefix, database);
+                    existingBalance = await this.repository.getBalance(dbprefix);
+                } catch (error) {
+                    throw new Error(`Failed to initialize balance: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                }
+            } else {
+                throw new Error(`Balance not found for user: ${dbprefix}. Please initialize balance first.`);
             }
         }
 
@@ -120,12 +124,17 @@ export class BalanceService {
             throw new Error('Balance not found after initialization');
         }
 
-        // Check funds availability for payment progress operations
-        if (operationType === BalanceOperationType.PROGRESS_PAYMENT && amount > existingBalance.totalFundAvailable) {
-            console.log('Insufficient funds', [
-                existingBalance.totalFundAvailable,
-                amount
-            ]);
+        // Validate balance for all operations
+        const validationResult = this.validateBalanceForOperation(operationType, amount, existingBalance);
+        if (!validationResult.isValid) {
+            console.log(`Operation validation failed: ${validationResult.reason}`, {
+                operationType,
+                amount,
+                currentBalance: existingBalance.currentBalance,
+                availableBalance: existingBalance.availableBalance,
+                totalFundAvailable: existingBalance.totalFundAvailable,
+                pendingTransactionAmount: existingBalance.pendingTransactionAmount
+            });
             return false;
         }
 
@@ -134,7 +143,7 @@ export class BalanceService {
             dbprefix: dbprefix,
             operationType,
             amount,
-            timestamp: new Date(),
+            timestamp: new Date(), // Fresh timestamp for each operation
             metadata
         };
 
@@ -144,10 +153,64 @@ export class BalanceService {
             throw new Error(result.error || `${operationType} operation failed`);
         }
 
-        // Schedule cleanup if needed (this runs asynchronously and won't block)
-        await this.scheduleCleanupIfNeeded(dbprefix, result.balance);
+        // Schedule cleanup asynchronously to not block the main operation
+        this.scheduleCleanupIfNeeded(dbprefix, result.balance).catch(error => {
+            console.error(`Failed to schedule cleanup for ${dbprefix}:`, error);
+        });
 
         return true;
+    }
+
+    private validateBalanceForOperation(
+        operationType: BalanceOperationType,
+        amount: number,
+        balance: any
+    ): { isValid: boolean; reason?: string } {
+        switch (operationType) {
+            case BalanceOperationType.PROGRESS_PAYMENT:
+                if (amount > balance.totalFundAvailable) {
+                    return {
+                        isValid: false,
+                        reason: `Insufficient funds: requested ${amount}, available ${balance.totalFundAvailable}`
+                    };
+                }
+                break;
+
+            case BalanceOperationType.COMPLETE_PAYMENT:
+                if (amount > balance.pendingTransactionAmount) {
+                    return {
+                        isValid: false,
+                        reason: `Insufficient pending amount: requested ${amount}, pending ${balance.pendingTransactionAmount}`
+                    };
+                }
+                break;
+
+            case BalanceOperationType.REVERSE_PAYMENT:
+                if (amount > balance.pendingTransactionAmount) {
+                    return {
+                        isValid: false,
+                        reason: `Insufficient pending amount to reverse: requested ${amount}, pending ${balance.pendingTransactionAmount}`
+                    };
+                }
+                break;
+
+            case BalanceOperationType.REFUND_PAYMENT:
+                if (amount > balance.pendingTransactionAmount) {
+                    return {
+                        isValid: false,
+                        reason: `Insufficient pending amount to refund: requested ${amount}, pending ${balance.pendingTransactionAmount}`
+                    };
+                }
+                break;
+
+            default:
+                return {
+                    isValid: false,
+                    reason: `Unknown operation type: ${operationType}`
+                };
+        }
+
+        return { isValid: true };
     }
 
     private async executeWithRetry(operation: BalanceOperation): Promise<BalanceOperationResult> {
@@ -168,24 +231,24 @@ export class BalanceService {
                     return result;
                 }
 
-                // If it's a cleanup-related error, use longer delay
-                const delay = this.isCleanupRelatedError(lastError) 
-                    ? this.config.cleanupRetryDelayMs 
-                    : this.config.retryDelayMs * Math.pow(2, attempt);
-
+                // Use exponential backoff for retries with maximum delay cap
                 if (attempt < this.config.maxRetries) {
+                    const delay = Math.min(
+                        this.config.retryDelayMs * Math.pow(2, attempt),
+                        this.config.maxRetryDelayMs
+                    );
                     await this.delay(delay);
                 }
 
             } catch (error) {
                 lastError = error instanceof Error ? error.message : 'Unknown error';
 
-                // If it's a cleanup-related error, use longer delay
-                const delay = this.isCleanupRelatedError(lastError) 
-                    ? this.config.cleanupRetryDelayMs 
-                    : this.config.retryDelayMs * Math.pow(2, attempt);
-
+                // Use exponential backoff for retries with maximum delay cap
                 if (attempt < this.config.maxRetries) {
+                    const delay = Math.min(
+                        this.config.retryDelayMs * Math.pow(2, attempt),
+                        this.config.maxRetryDelayMs
+                    );
                     await this.delay(delay);
                 }
             }
@@ -197,13 +260,6 @@ export class BalanceService {
             operationId: operation.id,
             retryCount: this.config.maxRetries
         };
-    }
-
-    private isCleanupRelatedError(error: string): boolean {
-        return error.includes('cleanup') || 
-               error.includes('lock') || 
-               error.includes('Balance not found') ||
-               error.includes('initialization');
     }
 
     private delay(ms: number): Promise<void> {
@@ -218,8 +274,8 @@ export class BalanceService {
                     balance.pendingTransactionAmount ?? 0
                 );
             } catch (error) {
+                // Log but don't throw - cleanup scheduling failures shouldn't block main operations
                 console.error(`Failed to schedule cleanup for ${dbprefix}:`, error);
-                // Don't throw here - cleanup scheduling failures shouldn't block main operations
             }
         }
     }

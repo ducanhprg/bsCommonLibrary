@@ -1,8 +1,12 @@
 import { Redis } from 'ioredis';
 import { BalanceCleanupRepositoryInterface } from '@shared/domain/interfaces/BalanceCleanupRepositoryInterface';
 import { BalanceCleanupTimer, BalanceCleanupResult, BalanceCleanupError } from '@shared/domain/entities/BalanceCleanup';
-import { BalanceRepositoryInterface } from '@shared/domain/interfaces/BalanceRepositoryInterface';
-import { BalanceUtilityService } from '@shared/services/BalanceUtilityService';
+
+export interface AuditCleanupConfig {
+    shouldPreserveAudit?: boolean; // Whether to preserve audit data when balance is cleaned
+    auditRetentionDays?: number; // How long to keep audit data (0 = immediate cleanup)
+    auditArchiveBeforeCleanup?: boolean; // Whether to create archive before cleanup
+}
 
 export class RedisBalanceCleanupRepository implements BalanceCleanupRepositoryInterface {
     private readonly CLEANUP_TIMER_PREFIX = 'balance_cleanup_timer';
@@ -14,15 +18,26 @@ export class RedisBalanceCleanupRepository implements BalanceCleanupRepositoryIn
         'total_fund_available',
         'pending_transaction_amount'
     ];
-    private readonly LOCK_TIMEOUT_MS = 5000; // Shorter timeout (5 seconds) to avoid blocking balance operations
+    private readonly AUDIT_KEYS = [
+        'balance_audit' // Main audit trail
+    ];
+    private readonly ARCHIVE_KEY_PREFIX = 'balance_audit_archive'; // For archived audit data
+    private readonly LOCK_TIMEOUT_MS = 5000; // 5 seconds timeout for cleanup operations
     private readonly CLEANUP_RETRY_DELAY_MS = 2000; // 2 seconds delay before retry
     private readonly MAX_CLEANUP_RETRIES = 3; // Maximum retry attempts for cleanup
 
     constructor(
         private readonly redisClient: Redis,
-        private readonly balanceRepository?: BalanceRepositoryInterface,
-        private readonly tenantDatabaseName?: string
-    ) {}
+        private readonly auditConfig: AuditCleanupConfig = {}
+    ) {
+        // Set default audit configuration
+        this.auditConfig = {
+            shouldPreserveAudit: auditConfig.shouldPreserveAudit ?? false, // Default: clean up audit data
+            auditRetentionDays: auditConfig.auditRetentionDays ?? 0, // Default: immediate cleanup
+            auditArchiveBeforeCleanup: auditConfig.auditArchiveBeforeCleanup ?? true, // Default: archive before cleanup
+            ...auditConfig
+        };
+    }
 
     async scheduleCleanup(dbprefix: string, delayMinutes: number): Promise<void> {
         try {
@@ -116,35 +131,9 @@ export class RedisBalanceCleanupRepository implements BalanceCleanupRepositoryIn
 
     private async executeCleanupWithRetry(dbprefix: string, retryCount: number): Promise<BalanceCleanupResult> {
         const cleanupLockKey = `${this.CLEANUP_LOCK_PREFIX}:${dbprefix}`;
-        let balanceLockId: string | null = null;
         
         try {
-            // Step 1: Check if balance operations are currently active
-            if (this.balanceRepository) {
-                const balanceExists = await this.balanceRepository.exists(dbprefix);
-                if (balanceExists) {
-                    // Try to acquire balance lock with a short timeout - if it fails, balance operations are active
-                    balanceLockId = await this.balanceRepository.lockBalance(dbprefix, this.LOCK_TIMEOUT_MS);
-                    
-                    if (!balanceLockId) {
-                        // Balance operations are active, defer cleanup
-                        if (retryCount < this.MAX_CLEANUP_RETRIES) {
-                            await this.delay(this.CLEANUP_RETRY_DELAY_MS);
-                            return await this.executeCleanupWithRetry(dbprefix, retryCount + 1);
-                        }
-                        
-                        return {
-                            dbprefix,
-                            success: false,
-                            keysRemoved: [],
-                            error: 'Balance operations are active, cleanup deferred after maximum retries',
-                            cleanupAt: new Date()
-                        };
-                    }
-                }
-            }
-
-            // Step 2: Acquire cleanup lock (shorter timeout to avoid blocking)
+            // Step 1: Acquire cleanup lock (short timeout to avoid blocking)
             const acquired = await this.redisClient.set(
                 cleanupLockKey,
                 'locked',
@@ -169,14 +158,17 @@ export class RedisBalanceCleanupRepository implements BalanceCleanupRepositoryIn
                 };
             }
 
-            // Step 3: Execute cleanup quickly to minimize lock time
-            const keysToRemove = this.BALANCE_KEYS.map(key => `${dbprefix}:${key}`);
+            // Step 2: Handle audit data based on configuration
+            const auditResult = await this.handleAuditCleanup(dbprefix);
+
+            // Step 3: Execute balance data cleanup quickly using pipeline for better performance
+            const balanceKeysToRemove = this.BALANCE_KEYS.map(key => `${dbprefix}:${key}`);
             const removedKeys: string[] = [];
 
             // Use pipeline for faster execution
             const pipeline = this.redisClient.pipeline();
             
-            for (const key of keysToRemove) {
+            for (const key of balanceKeysToRemove) {
                 pipeline.exists(key);
             }
             
@@ -185,10 +177,10 @@ export class RedisBalanceCleanupRepository implements BalanceCleanupRepositoryIn
             if (existsResults) {
                 const deleteCommands = this.redisClient.pipeline();
                 
-                for (let i = 0; i < keysToRemove.length; i++) {
+                for (let i = 0; i < balanceKeysToRemove.length; i++) {
                     if (existsResults[i] && existsResults[i][1] === 1) {
-                        deleteCommands.del(keysToRemove[i]);
-                        removedKeys.push(keysToRemove[i]);
+                        deleteCommands.del(balanceKeysToRemove[i]);
+                        removedKeys.push(balanceKeysToRemove[i]);
                     }
                 }
                 
@@ -197,26 +189,14 @@ export class RedisBalanceCleanupRepository implements BalanceCleanupRepositoryIn
                 }
             }
 
-            // Step 4: Quickly reinitialize balance if cleanup was successful
-            if (this.balanceRepository && this.tenantDatabaseName && removedKeys.length > 0) {
-                try {
-                    const utilityService = new BalanceUtilityService(
-                        this.balanceRepository,
-                        dbprefix,
-                        this.tenantDatabaseName
-                    );
-                    await utilityService.initializeBalance(dbprefix, this.tenantDatabaseName);
-                } catch (reinitError) {
-                    // Log error but don't fail the cleanup
-                    console.error(`Failed to reinitialize balance for ${dbprefix} after cleanup:`, reinitError);
-                    return {
-                        dbprefix,
-                        success: true,
-                        keysRemoved: removedKeys,
-                        error: `Cleanup successful but reinitialization failed: ${reinitError instanceof Error ? reinitError.message : 'Unknown error'}`,
-                        cleanupAt: new Date()
-                    };
-                }
+            // Add audit keys to removed keys list if they were processed
+            if (auditResult.keysProcessed.length > 0) {
+                removedKeys.push(...auditResult.keysProcessed);
+            }
+
+            // Log audit cleanup information
+            if (auditResult.summary) {
+                console.log(`[BalanceCleanup] ${dbprefix}: ${auditResult.summary}`);
             }
 
             return {
@@ -242,23 +222,181 @@ export class RedisBalanceCleanupRepository implements BalanceCleanupRepositoryIn
                 cleanupAt: new Date()
             };
         } finally {
-            // Step 5: Release locks immediately
-            const cleanupPromises: Promise<any>[] = [];
-            
+            // Step 4: Release cleanup lock
             try {
-                // Release balance lock first (highest priority)
-                if (balanceLockId && this.balanceRepository) {
-                    cleanupPromises.push(this.balanceRepository.releaseLock(dbprefix, balanceLockId));
+                await this.redisClient.del(cleanupLockKey);
+            } catch (lockError) {
+                console.error(`Failed to release cleanup lock for ${dbprefix}:`, lockError);
+            }
+        }
+    }
+
+    private async handleAuditCleanup(dbprefix: string): Promise<{
+        keysProcessed: string[];
+        summary: string;
+    }> {
+        const auditKeysToCheck = this.AUDIT_KEYS.map(key => `${dbprefix}:${key}`);
+        const keysProcessed: string[] = [];
+        let summary = '';
+
+        try {
+            if (this.auditConfig.shouldPreserveAudit) {
+                // Preserve audit data - only set expiration if configured
+                if (this.auditConfig.auditRetentionDays && this.auditConfig.auditRetentionDays > 0) {
+                    const expirationSeconds = this.auditConfig.auditRetentionDays * 24 * 60 * 60;
+                    
+                    for (const auditKey of auditKeysToCheck) {
+                        const exists = await this.redisClient.exists(auditKey);
+                        if (exists) {
+                            await this.redisClient.expire(auditKey, expirationSeconds);
+                            keysProcessed.push(`${auditKey}:expire_${this.auditConfig.auditRetentionDays}d`);
+                        }
+                    }
+                    summary = `Audit data preserved with ${this.auditConfig.auditRetentionDays} day expiration`;
+                } else {
+                    summary = 'Audit data preserved indefinitely';
+                }
+            } else {
+                // Clean up audit data
+                if (this.auditConfig.auditArchiveBeforeCleanup) {
+                    // Archive before cleanup
+                    const archiveResult = await this.archiveAuditData(dbprefix);
+                    if (archiveResult.archived) {
+                        keysProcessed.push(archiveResult.archiveKey);
+                    }
+                }
+
+                // Remove audit keys
+                const pipeline = this.redisClient.pipeline();
+                for (const auditKey of auditKeysToCheck) {
+                    pipeline.exists(auditKey);
                 }
                 
-                // Release cleanup lock
-                cleanupPromises.push(this.redisClient.del(cleanupLockKey));
+                const auditExistsResults = await pipeline.exec();
                 
-                // Execute all cleanup operations in parallel
-                await Promise.all(cleanupPromises);
-            } catch (lockError) {
-                console.error(`Failed to release locks for ${dbprefix}:`, lockError);
+                if (auditExistsResults) {
+                    const deleteCommands = this.redisClient.pipeline();
+                    
+                    for (let i = 0; i < auditKeysToCheck.length; i++) {
+                        if (auditExistsResults[i] && auditExistsResults[i][1] === 1) {
+                            deleteCommands.del(auditKeysToCheck[i]);
+                            keysProcessed.push(auditKeysToCheck[i]);
+                        }
+                    }
+                    
+                    if (keysProcessed.length > 0) {
+                        await deleteCommands.exec();
+                    }
+                }
+
+                summary = this.auditConfig.auditArchiveBeforeCleanup 
+                    ? 'Audit data archived and cleaned up'
+                    : 'Audit data cleaned up immediately';
             }
+        } catch (error) {
+            console.error(`Failed to handle audit cleanup for ${dbprefix}:`, error);
+            summary = `Audit cleanup failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+        }
+
+        return { keysProcessed, summary };
+    }
+
+    private async archiveAuditData(dbprefix: string): Promise<{
+        archived: boolean;
+        archiveKey: string;
+        entryCount?: number;
+    }> {
+        const auditKey = `${dbprefix}:balance_audit`;
+        const archiveKey = `${this.ARCHIVE_KEY_PREFIX}:${dbprefix}:${Date.now()}`;
+
+        try {
+            // Get all audit entries
+            const auditEntries = await this.redisClient.lrange(auditKey, 0, -1);
+            
+            if (auditEntries.length === 0) {
+                return { archived: false, archiveKey: '' };
+            }
+
+            // Create archive with metadata
+            const archiveData = {
+                dbprefix,
+                originalKey: auditKey,
+                archivedAt: new Date().toISOString(),
+                entryCount: auditEntries.length,
+                entries: auditEntries
+            };
+
+            // Store archive (with expiration if configured)
+            await this.redisClient.set(archiveKey, JSON.stringify(archiveData));
+            
+            // Set expiration for archive (default: 90 days)
+            const archiveRetentionDays = this.auditConfig.auditRetentionDays || 90;
+            await this.redisClient.expire(archiveKey, archiveRetentionDays * 24 * 60 * 60);
+
+            return {
+                archived: true,
+                archiveKey,
+                entryCount: auditEntries.length
+            };
+        } catch (error) {
+            console.error(`Failed to archive audit data for ${dbprefix}:`, error);
+            return { archived: false, archiveKey: '' };
+        }
+    }
+
+    // New method to retrieve archived audit data
+    async getArchivedAuditData(dbprefix: string): Promise<any[]> {
+        try {
+            const pattern = `${this.ARCHIVE_KEY_PREFIX}:${dbprefix}:*`;
+            const archiveKeys = await this.scanKeys(pattern);
+            
+            const archives = [];
+            for (const key of archiveKeys) {
+                const archiveData = await this.redisClient.get(key);
+                if (archiveData) {
+                    archives.push(JSON.parse(archiveData));
+                }
+            }
+            
+            return archives.sort((a, b) => new Date(b.archivedAt).getTime() - new Date(a.archivedAt).getTime());
+        } catch (error) {
+            console.error(`Failed to get archived audit data for ${dbprefix}:`, error);
+            return [];
+        }
+    }
+
+    // New method to get audit cleanup statistics
+    async getAuditCleanupStats(): Promise<{
+        activeAuditKeys: number;
+        archivedAuditKeys: number;
+        orphanedAuditKeys: number;
+    }> {
+        try {
+            const auditPattern = '*:balance_audit';
+            const balancePattern = '*:current_balance';
+            const archivePattern = `${this.ARCHIVE_KEY_PREFIX}:*`;
+
+            const [auditKeys, balanceKeys, archiveKeys] = await Promise.all([
+                this.scanKeys(auditPattern),
+                this.scanKeys(balancePattern),
+                this.scanKeys(archivePattern)
+            ]);
+
+            // Extract dbprefixes
+            const auditDbprefixes = new Set(auditKeys.map(key => key.replace(':balance_audit', '')));
+            const balanceDbprefixes = new Set(balanceKeys.map(key => key.replace(':current_balance', '')));
+
+            // Find orphaned audit keys (audit exists but balance doesn't)
+            const orphanedCount = [...auditDbprefixes].filter(dbprefix => !balanceDbprefixes.has(dbprefix)).length;
+
+            return {
+                activeAuditKeys: auditKeys.length,
+                archivedAuditKeys: archiveKeys.length,
+                orphanedAuditKeys: orphanedCount
+            };
+        } catch (error) {
+            console.error('Failed to get audit cleanup stats:', error);
+            return { activeAuditKeys: 0, archivedAuditKeys: 0, orphanedAuditKeys: 0 };
         }
     }
 

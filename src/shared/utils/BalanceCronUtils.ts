@@ -1,31 +1,27 @@
 import { Redis } from 'ioredis';
 import { getRedisClient } from '@shared/configs/redisConfig';
-import { RedisBalanceCleanupRepository } from '@shared/infrastructure/repositories/RedisBalanceCleanupRepository';
+import { RedisBalanceCleanupRepository, AuditCleanupConfig } from '@shared/infrastructure/repositories/RedisBalanceCleanupRepository';
 import { BalanceCleanupService } from '@shared/services/BalanceCleanupService';
 import { BalanceCleanupResult } from '@shared/domain/entities/BalanceCleanup';
-import { BalanceRepositoryInterface } from '@shared/domain/interfaces/BalanceRepositoryInterface';
-import { RedisBalanceRepository } from '@shared/infrastructure/redis/RedisBalanceRepository';
 
-export interface BalanceCronConfig {
+export interface BalanceCronConfig extends AuditCleanupConfig {
     defaultCleanupDelayMinutes?: number;
     maxConcurrentCleanups?: number;
     enableLogging?: boolean;
     redisClient?: Redis;
-    balanceRepository?: BalanceRepositoryInterface;
-    tenantDatabaseName?: string;
 }
 
 export function createBalanceCleanupRepository(config: BalanceCronConfig = {}): RedisBalanceCleanupRepository {
-    const redisClient = config.redisClient || new Redis(); // Use provided Redis client or create new one
+    const redisClient = config.redisClient || getRedisClient();
     
-    // Use provided balance repository or create a new one
-    const balanceRepository = config.balanceRepository || new RedisBalanceRepository(redisClient);
+    // Extract audit-specific configuration
+    const auditConfig: AuditCleanupConfig = {
+        shouldPreserveAudit: config.shouldPreserveAudit,
+        auditRetentionDays: config.auditRetentionDays,
+        auditArchiveBeforeCleanup: config.auditArchiveBeforeCleanup
+    };
     
-    return new RedisBalanceCleanupRepository(
-        redisClient,
-        balanceRepository,
-        config.tenantDatabaseName
-    );
+    return new RedisBalanceCleanupRepository(redisClient, auditConfig);
 }
 
 /**
@@ -89,30 +85,43 @@ export async function executeBalanceCleanupCron(config: BalanceCronConfig = {}):
 }
 
 /**
- * Gets statistics about active cleanup timers
+ * Gets statistics about active cleanup timers and audit data
  * Useful for monitoring and health checks
  */
 export async function getBalanceCleanupStats(config: BalanceCronConfig = {}): Promise<{
     activeTimersCount: number;
     oldestTimerAge?: number;
     newestTimerAge?: number;
+    auditStats?: {
+        activeAuditKeys: number;
+        archivedAuditKeys: number;
+        orphanedAuditKeys: number;
+    };
 }> {
     try {
         const cleanupService = createBalanceCleanupService(config);
+        const cleanupRepository = createBalanceCleanupRepository(config);
+        
         const activeTimers = await cleanupService.getActiveTimers();
         
-        if (activeTimers.length === 0) {
-            return { activeTimersCount: 0 };
+        let stats: any = { activeTimersCount: activeTimers.length };
+        
+        if (activeTimers.length > 0) {
+            const now = Date.now();
+            const ages = activeTimers.map(timer => now - timer.scheduledAt.getTime());
+            
+            stats.oldestTimerAge = Math.max(...ages);
+            stats.newestTimerAge = Math.min(...ages);
         }
         
-        const now = Date.now();
-        const ages = activeTimers.map(timer => now - timer.scheduledAt.getTime());
+        // Get audit statistics
+        try {
+            stats.auditStats = await cleanupRepository.getAuditCleanupStats();
+        } catch (auditError) {
+            console.error('Failed to get audit stats:', auditError);
+        }
         
-        return {
-            activeTimersCount: activeTimers.length,
-            oldestTimerAge: Math.max(...ages),
-            newestTimerAge: Math.min(...ages)
-        };
+        return stats;
     } catch (error) {
         console.error(`[BalanceCronUtils] Failed to get cleanup stats: ${error instanceof Error ? error.message : 'Unknown error'}`);
         return { activeTimersCount: 0 };
@@ -126,14 +135,29 @@ export async function balanceCleanupHealthCheck(config: BalanceCronConfig = {}):
     isHealthy: boolean;
     activeTimers: number;
     message: string;
+    auditHealth?: {
+        orphanedAuditKeys: number;
+        warningThreshold: number;
+    };
 }> {
     try {
         const stats = await getBalanceCleanupStats(config);
+        const orphanedCount = stats.auditStats?.orphanedAuditKeys || 0;
+        const warningThreshold = 100; // Alert if more than 100 orphaned audit keys
+        
+        const isHealthy = orphanedCount < warningThreshold;
+        const message = isHealthy 
+            ? `Balance cleanup system is healthy. Active timers: ${stats.activeTimersCount}, Orphaned audit keys: ${orphanedCount}`
+            : `Balance cleanup system has issues. Active timers: ${stats.activeTimersCount}, Orphaned audit keys: ${orphanedCount} (exceeds threshold of ${warningThreshold})`;
         
         return {
-            isHealthy: true,
+            isHealthy,
             activeTimers: stats.activeTimersCount,
-            message: `Balance cleanup system is healthy. Active timers: ${stats.activeTimersCount}`
+            message,
+            auditHealth: {
+                orphanedAuditKeys: orphanedCount,
+                warningThreshold
+            }
         };
     } catch (error) {
         return {
@@ -144,40 +168,7 @@ export async function balanceCleanupHealthCheck(config: BalanceCronConfig = {}):
     }
 }
 
-// Enhanced factory function for complete balance service setup
-export function createBalanceServiceWithCleanup(
-    balanceRepository: BalanceRepositoryInterface,
-    config: BalanceCronConfig & {
-        maxRetries?: number;
-        retryDelayMs?: number;
-        defaultCreditLimit?: number;
-        cleanupRetryDelayMs?: number;
-    } = {}
-): { balanceService: any; cleanupService: BalanceCleanupService } {
-    const { BalanceService } = require('@shared/services/BalanceService');
-    
-    const cleanupService = createBalanceCleanupService({
-        ...config,
-        balanceRepository // Pass the same repository for seamless integration
-    });
-
-    const balanceService = new BalanceService(
-        balanceRepository,
-        {
-            maxRetries: config.maxRetries,
-            retryDelayMs: config.retryDelayMs,
-            defaultCreditLimit: config.defaultCreditLimit,
-            cleanupRetryDelayMs: config.cleanupRetryDelayMs
-        },
-        undefined, // tenantDatabasePrefix
-        config.tenantDatabaseName,
-        cleanupService
-    );
-
-    return { balanceService, cleanupService };
-}
-
-// Cron job utilities (keeping existing functionality)
+// Cron job utilities
 let cleanupService: BalanceCleanupService | null = null;
 
 export async function startBalanceCleanupCron(config: BalanceCronConfig = {}): Promise<void> {
