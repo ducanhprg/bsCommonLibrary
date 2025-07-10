@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import {
+    Balance,
     BalanceOperation,
     BalanceOperationResult,
     BalanceOperationType
@@ -84,6 +85,88 @@ export class BalanceService {
             metadata,
             false // doesn't require initialization
         );
+    }
+
+    async getBalance(dbprefix: string): Promise<Balance> {
+        if (!dbprefix || dbprefix.trim() === '') {
+            throw new Error('Database prefix is required');
+        }
+
+        const balance = await this.repository.getBalance(dbprefix);
+        
+        if (!balance) {
+            throw new Error(`Balance not found for user: ${dbprefix}`);
+        }
+
+        return balance;
+    }
+
+    async updateBalance(dbprefix: string, amount: number, metadata?: Record<string, any>): Promise<Balance> {
+        if (!dbprefix || dbprefix.trim() === '') {
+            throw new Error('Database prefix is required');
+        }
+
+        this.utilityService.validateAmount(Math.abs(amount));
+
+        return await this.repository.updateBalance(dbprefix, amount, metadata);
+    }
+
+    async updateCreditLimit(dbprefix: string, amount: number, metadata?: Record<string, any>): Promise<Balance> {
+
+        if (!dbprefix || dbprefix.trim() === '') {
+            throw new Error('Database prefix is required');
+        }
+
+        this.utilityService.validateAmount(Math.abs(amount));
+        
+        return await this.repository.updateCreditLimit(dbprefix, amount, metadata);
+    }
+
+    async reinitializeBalance(dbprefix: string, database: string, metadata?: Record<string, any>): Promise<Balance> {
+        // Validate input parameters
+        if (!dbprefix || dbprefix.trim() === '') {
+            throw new Error('Database prefix is required');
+        }
+
+        if (!database || database.trim() === '') {
+            throw new Error('Database parameter is required for balance reinitialization');
+        }
+
+        // Get current balance to check pending transactions
+        const currentBalance = await this.repository.getBalance(dbprefix);
+        if (!currentBalance) {
+            throw new Error(`Balance not found for user: ${dbprefix}`);
+        }
+
+        // Check if there are any pending transactions
+        if (currentBalance.pendingTransactionAmount > 0) {
+            throw new Error(
+                `Cannot reinitialize balance with pending transactions. ` +
+                `Pending amount: ${currentBalance.pendingTransactionAmount}. ` +
+                `Please complete or reverse all pending transactions before reinitializing.`
+            );
+        }
+
+        try {
+            // Delete the existing balance to allow reinitialization
+            await this.repository.deleteBalance(dbprefix);
+
+            // Use the utility service to initialize the balance
+            const reinitializedBalance = await this.utilityService.initializeBalance(dbprefix, database);
+
+            // Log the reinitialization for audit purposes
+            console.log(`Balance reinitialized for user: ${dbprefix}`, {
+                previousBalance: currentBalance.currentBalance,
+                newBalance: reinitializedBalance.currentBalance,
+                previousCreditLimit: currentBalance.creditLimit,
+                newCreditLimit: reinitializedBalance.creditLimit,
+                metadata
+            });
+
+            return reinitializedBalance;
+        } catch (error) {
+            throw new Error(`Failed to reinitialize balance: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
     }
 
     private async executeBalanceOperation(
@@ -279,5 +362,7 @@ export class BalanceService {
             }
         }
     }
+
+
 
 }

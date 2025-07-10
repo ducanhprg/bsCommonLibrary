@@ -28,7 +28,12 @@ export enum BalanceOperationType {
     PROGRESS_PAYMENT = 'progress_payment',
     REVERSE_PAYMENT = 'reverse_payment',
     COMPLETE_PAYMENT = 'complete_payment',
-    REFUND_PAYMENT = 'refund_payment'
+    REFUND_PAYMENT = 'refund_payment',
+    BALANCE_ADD = 'balance_add',
+    BALANCE_SUBTRACT = 'balance_subtract',
+    CREDIT_LIMIT_ADD = 'credit_limit_add',
+    CREDIT_LIMIT_SUBTRACT = 'credit_limit_subtract',
+    BALANCE_DELETION = 'balance_deletion'
 }
 
 export interface BalanceOperation {
