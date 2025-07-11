@@ -29,10 +29,9 @@ export enum BalanceOperationType {
     REVERSE_PAYMENT = 'reverse_payment',
     COMPLETE_PAYMENT = 'complete_payment',
     REFUND_PAYMENT = 'refund_payment',
-    BALANCE_ADD = 'balance_add',
-    BALANCE_SUBTRACT = 'balance_subtract',
-    CREDIT_LIMIT_ADD = 'credit_limit_add',
-    CREDIT_LIMIT_SUBTRACT = 'credit_limit_subtract',
+    BALANCE_DEPOSIT = 'balance_deposit',
+    BALANCE_WITHDRAWAL = 'balance_withdrawal',
+    CREDIT_LIMIT_UPDATE = 'credit_limit_update',
     BALANCE_DELETION = 'balance_deletion'
 }
 
