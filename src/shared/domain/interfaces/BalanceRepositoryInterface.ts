@@ -59,5 +59,10 @@ export interface BalanceRepositoryInterface {
     /**
      * Delete balance for reinitialization
      */
-    deleteBalance(dbprefix: string): Promise<boolean>;
+    deleteBalance(dbprefix: string, force?: boolean): Promise<boolean>;
+
+    /**
+     * Force delete balance ignoring pending transactions
+     */
+    forceDeleteBalance(dbprefix: string): Promise<boolean>;
 }

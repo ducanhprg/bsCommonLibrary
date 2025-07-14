@@ -101,26 +101,23 @@ export class BalanceService {
         return balance;
     }
 
-        async updateBalance(dbprefix: string, database: string, amount: number, metadata?: Record<string, any>): Promise<Balance> {
+    async updateBalance(dbprefix: string, amount: number, metadata?: Record<string, any>): Promise<Balance> {
         if (!dbprefix || dbprefix.trim() === '') {
             throw new Error('Database prefix is required');
         }
 
         this.utilityService.validateAmount(Math.abs(amount));
-
-        await this.ensureBalanceExists(dbprefix, database);
 
         return await this.repository.updateBalance(dbprefix, amount, metadata);
     }
 
-            async updateCreditLimit(dbprefix: string, database: string, amount: number, metadata?: Record<string, any>): Promise<Balance> {
+    async updateCreditLimit(dbprefix: string, amount: number, metadata?: Record<string, any>): Promise<Balance> {
+
         if (!dbprefix || dbprefix.trim() === '') {
             throw new Error('Database prefix is required');
         }
 
         this.utilityService.validateAmount(Math.abs(amount));
-        
-        await this.ensureBalanceExists(dbprefix, database);
         
         return await this.repository.updateCreditLimit(dbprefix, amount, metadata);
     }
@@ -172,27 +169,116 @@ export class BalanceService {
         }
     }
 
-    private async ensureBalanceExists(dbprefix: string, database?: string): Promise<Balance> {
-        let existingBalance = await this.repository.getBalance(dbprefix);
+    async resetUserBalance(dbprefix: string, database: string, force: boolean = false, metadata?: Record<string, any>): Promise<{
+        success: boolean;
+        balance?: Balance;
+        message?: string;
+        requiresForce?: boolean;
+    }> {
+        if (!dbprefix || dbprefix.trim() === '') {
+            throw new Error('Database prefix is required');
+        }
 
-        if (!existingBalance) {
-            if (database && database.trim() !== '') {
-                try {
-                    await this.utilityService.initializeBalance(dbprefix, database);
-                    existingBalance = await this.repository.getBalance(dbprefix);
-                } catch (error) {
-                    throw new Error(`Failed to initialize balance: ${error instanceof Error ? error.message : 'Unknown error'}`);
-                }
-            } else {
-                throw new Error(`Balance not found for user: ${dbprefix}. Please provide database parameter for auto-initialization or initialize balance first using progressPayment.`);
+        if (!database || database.trim() === '') {
+            throw new Error('Database parameter is required for balance reset');
+        }
+
+        const currentBalance = await this.repository.getBalance(dbprefix);
+        if (!currentBalance) {
+            throw new Error(`Balance not found for user: ${dbprefix}`);
+        }
+
+        // Case 1: No pending transactions - proceed with normal reinitialization
+        if (currentBalance.pendingTransactionAmount === 0) {
+            try {
+                await this.repository.deleteBalance(dbprefix, false);
+                const reinitializedBalance = await this.utilityService.initializeBalance(dbprefix, database);
+                
+                return {
+                    success: true,
+                    balance: reinitializedBalance,
+                    message: 'Balance reset successfully'
+                };
+            } catch (error) {
+                throw new Error(`Failed to reset balance: ${error instanceof Error ? error.message : 'Unknown error'}`);
             }
         }
 
-        if (!existingBalance) {
-            throw new Error('Balance not found after initialization');
+        // Case 2: Has pending transactions and force is false
+        if (currentBalance.pendingTransactionAmount > 0 && !force) {
+            return {
+                success: false,
+                balance: currentBalance,
+                message: `Cannot reset balance with pending transactions (${currentBalance.pendingTransactionAmount}). Use force=true to override.`,
+                requiresForce: true
+            };
         }
 
-        return existingBalance;
+        // Case 3: Has pending transactions and force is true - handle with Redis locking
+        if (currentBalance.pendingTransactionAmount > 0 && force) {
+            return await this.forceResetWithLocking(dbprefix, database, metadata);
+        }
+
+        throw new Error('Unexpected condition in resetUserBalance');
+    }
+
+    private async forceResetWithLocking(dbprefix: string, database: string, metadata?: Record<string, any>): Promise<{
+        success: boolean;
+        balance?: Balance;
+        message?: string;
+    }> {
+        const lockTimeout = 30000;
+        const maxWaitTime = 60000;
+        const checkInterval = 100; 
+        
+        let lockId: string | null = null;
+        let waitStartTime = Date.now();
+
+        try {
+            while (Date.now() - waitStartTime < maxWaitTime) {
+                lockId = await this.repository.lockBalance(dbprefix, lockTimeout);
+                
+                if (lockId) {
+                    break;
+                }
+
+                await this.delay(checkInterval);
+            }
+
+            if (!lockId) {
+                throw new Error('Failed to acquire lock for force reset. Please try again later.');
+            }
+
+            try {
+                // Use forceDeleteBalance to delete the balance (ignoring pending transactions)
+                await this.repository.forceDeleteBalance(dbprefix);
+
+                const reinitializedBalance = await this.utilityService.initializeBalance(dbprefix, database);
+
+                console.log(`Balance force reset for user: ${dbprefix}`, {
+                    forcedReset: true,
+                    previousPendingAmount: 'ignored',
+                    newBalance: reinitializedBalance.currentBalance,
+                    metadata
+                });
+
+                return {
+                    success: true,
+                    balance: reinitializedBalance,
+                    message: 'Balance force reset successfully'
+                };
+            } catch (error) {
+                throw new Error(`Failed to force reset balance: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            }
+        } finally {
+            if (lockId) {
+                try {
+                    await this.repository.releaseLock(dbprefix, lockId);
+                } catch (error) {
+                    console.error(`Failed to release lock for ${dbprefix}:`, error);
+                }
+            }
+        }
     }
 
     private async executeBalanceOperation(
@@ -203,18 +289,33 @@ export class BalanceService {
         metadata?: Record<string, any>,
         requiresInitialization: boolean = false
     ): Promise<boolean> {
-        // Validate input parameters
         if (!dbprefix || dbprefix.trim() === '') {
             throw new Error('Database prefix is required');
         }
 
         this.utilityService.validateAmount(amount);
 
-        const existingBalance = requiresInitialization 
-            ? await this.ensureBalanceExists(dbprefix, database)
-            : await this.ensureBalanceExists(dbprefix);
+        let existingBalance = await this.repository.getBalance(dbprefix);
+        if (!existingBalance) {
+            if (requiresInitialization) {
+                if (!database || database.trim() === '') {
+                    throw new Error('Database parameter is required for balance initialization');
+                }
+                try {
+                    await this.utilityService.initializeBalance(dbprefix, database);
+                    existingBalance = await this.repository.getBalance(dbprefix);
+                } catch (error) {
+                    throw new Error(`Failed to initialize balance: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                }
+            } else {
+                throw new Error(`Balance not found for user: ${dbprefix}. Please initialize balance first.`);
+            }
+        }
 
-        // Validate balance for all operations
+        if (!existingBalance) {
+            throw new Error('Balance not found after initialization');
+        }
+
         const validationResult = this.validateBalanceForOperation(operationType, amount, existingBalance);
         if (!validationResult.isValid) {
             console.log(`Operation validation failed: ${validationResult.reason}`, {
@@ -243,7 +344,6 @@ export class BalanceService {
             throw new Error(result.error || `${operationType} operation failed`);
         }
 
-        // Schedule cleanup asynchronously to not block the main operation
         this.scheduleCleanupIfNeeded(dbprefix, result.balance).catch(error => {
             console.error(`Failed to schedule cleanup for ${dbprefix}:`, error);
         });
