@@ -1,5 +1,7 @@
 import { Redis } from 'ioredis';
 import { v4 as uuidv4 } from 'uuid';
+import * as fs from 'fs';
+import * as path from 'path';
 import {
     Balance,
     BalanceOperation,
@@ -14,8 +16,10 @@ export class RedisBalanceRepository implements BalanceRepositoryInterface {
     private redis: Redis;
     private balanceOperationScript: string = '';
     private createBalanceScript: string = '';
+    private deleteBalanceScript: string = '';
     private balanceOperationSha: string | null = null;
     private createBalanceSha: string | null = null;
+    private deleteBalanceSha: string | null = null;
 
     constructor(redis: Redis) {
         this.redis = redis;
@@ -23,8 +27,33 @@ export class RedisBalanceRepository implements BalanceRepositoryInterface {
     }
 
     private loadLuaScripts(): void {
-        // For now, we'll load the scripts inline to avoid __dirname issues
-        // In a production environment, you might want to load from files
+        // Load scripts from files for better maintainability
+        try {
+            // Load balanceOperations.lua
+            this.balanceOperationScript = fs.readFileSync(
+                path.join(__dirname, 'scripts', 'balanceOperations.lua'), 
+                'utf8'
+            );
+            
+            // Load createBalance.lua
+            this.createBalanceScript = fs.readFileSync(
+                path.join(__dirname, 'scripts', 'createBalance.lua'), 
+                'utf8'
+            );
+            
+            // Load deleteBalance.lua
+            this.deleteBalanceScript = fs.readFileSync(
+                path.join(__dirname, 'scripts', 'deleteBalance.lua'), 
+                'utf8'
+            );
+        } catch (error) {
+            console.warn('Could not load Lua scripts from files, falling back to inline scripts:', error);
+            // Fallback to inline scripts if file loading fails
+            this.loadInlineScripts();
+        }
+    }
+
+    private loadInlineScripts(): void {
         this.balanceOperationScript = `
             -- Balance Operations Lua Script (inline version)
             local balanceKey = KEYS[1]
@@ -87,6 +116,31 @@ export class RedisBalanceRepository implements BalanceRepositoryInterface {
                 newAvailable = available + amount
                 newTotalFund = totalFund + amount
                 newPending = pending - amount
+
+            elseif operationType == "balance_deposit" then
+                -- Add to current and available balance
+                newCurrent = current + amount
+                newAvailable = available + amount
+                newTotalFund = newCurrent + creditLimit
+
+            elseif operationType == "balance_withdrawal" then
+                -- Subtract from current and available balance
+                if current < amount then
+                    return {false, "Insufficient balance", current}
+                end
+                newCurrent = current - amount
+                newAvailable = available - amount
+                newTotalFund = newCurrent + creditLimit
+
+            elseif operationType == "credit_limit_update" then
+                -- Update credit limit and recalculate total fund available
+                local newCreditLimit = creditLimit + amount
+                if newCreditLimit < 0 then
+                    return {false, "Credit limit cannot be negative", creditLimit}
+                end
+                creditLimit = newCreditLimit
+                newTotalFund = current + creditLimit
+
             else
                 return {false, "Invalid operation type"}
             end
@@ -99,6 +153,7 @@ export class RedisBalanceRepository implements BalanceRepositoryInterface {
             redis.call('HMSET', balanceKey,
                 'current_balance', newCurrent,
                 'available_balance', newAvailable,
+                'credit_limit', creditLimit,
                 'total_fund_available', newTotalFund,
                 'pending_transaction_amount', newPending,
                 'version', newVersion,
@@ -164,6 +219,66 @@ export class RedisBalanceRepository implements BalanceRepositoryInterface {
                 last_updated = timestamp
             }}
         `;
+
+        this.deleteBalanceScript = `
+            -- Delete Balance Lua Script (inline version)
+            local balanceKey = KEYS[1]
+            local auditKey = KEYS[2]
+            local operationId = ARGV[1]
+            local timestamp = ARGV[2]
+            local force = ARGV[3] or "false"
+            
+            if redis.call('EXISTS', balanceKey) == 0 then
+                return {false, "Balance not found"}
+            end
+            
+            local version = tonumber(redis.call('HGET', balanceKey, 'version')) or 0
+            local pendingAmount = tonumber(redis.call('HGET', balanceKey, 'pending_transaction_amount')) or 0
+            
+            -- Check if there are pending transactions and force is not enabled
+            if pendingAmount > 0 and force ~= "true" then
+                return {false, "Cannot delete balance with pending transactions"}
+            end
+            
+            -- Get current balance state for audit
+            local current = redis.call('HMGET', balanceKey,
+                'current_balance', 'available_balance', 'credit_limit',
+                'total_fund_available', 'pending_transaction_amount')
+
+            local currentBalance = tonumber(current[1]) or 0
+            local availableBalance = tonumber(current[2]) or 0
+            local creditLimit = tonumber(current[3]) or 0
+            local totalFund = tonumber(current[4]) or 0
+            local pending = tonumber(current[5]) or 0
+            
+            -- Delete the balance
+            redis.call('DEL', balanceKey)
+            
+            -- Add audit entry for deletion
+            local auditEntry = {
+                operation_id = operationId,
+                operation_type = force == "true" and 'balance_force_deletion' or 'balance_deletion',
+                timestamp = timestamp,
+                version = version,
+                metadata = force == "true" and '{"action": "balance_force_reinitialization", "pending_amount_ignored": ' .. pending .. '}' or '{"action": "balance_reinitialization"}',
+                previous_state = {
+                    current_balance = currentBalance,
+                    available_balance = availableBalance,
+                    credit_limit = creditLimit,
+                    total_fund_available = totalFund,
+                    pending_transaction_amount = pending
+                },
+                new_state = {
+                    deleted = true,
+                    forced = force == "true"
+                }
+            }
+            
+            redis.call('LPUSH', auditKey, cjson.encode(auditEntry))
+            redis.call('LTRIM', auditKey, 0, 999)
+            
+            return {true, force == "true" and "Balance force deleted successfully" or "Balance deleted successfully"}
+        `;
     }
 
     private async ensureScriptsLoaded(): Promise<void> {
@@ -174,6 +289,9 @@ export class RedisBalanceRepository implements BalanceRepositoryInterface {
             }
             if (!this.createBalanceSha) {
                 this.createBalanceSha = await this.redis.call('SCRIPT', 'LOAD', this.createBalanceScript) as string;
+            }
+            if (!this.deleteBalanceSha) {
+                this.deleteBalanceSha = await this.redis.call('SCRIPT', 'LOAD', this.deleteBalanceScript) as string;
             }
         } catch (error) {
             console.error('Failed to load Lua scripts:', error);
@@ -401,16 +519,88 @@ export class RedisBalanceRepository implements BalanceRepositoryInterface {
 
     async releaseLock(dbprefix: string, lockId: string): Promise<boolean> {
         const lockKey = this.getLockKey(dbprefix);
-
         const script = `
-            if redis.call("GET", KEYS[1]) == ARGV[1] then
-                return redis.call("DEL", KEYS[1])
+            if redis.call("get", KEYS[1]) == ARGV[1] then
+                return redis.call("del", KEYS[1])
             else
                 return 0
             end
         `;
-
+        
         const result = await this.redis.eval(script, 1, lockKey, lockId) as number;
         return result === 1;
+    }
+
+    async updateBalance(dbprefix: string, amount: number, metadata?: Record<string, any>): Promise<Balance> {
+        const operationType = amount >= 0 ? 'balance_deposit' : 'balance_withdrawal';
+        
+        // Create operation
+        const operation: BalanceOperation = {
+            id: uuidv4(),
+            dbprefix: dbprefix,
+            operationType: operationType as any,
+            amount: Math.abs(amount),
+            timestamp: new Date(),
+            metadata
+        };
+
+        // Execute using the main balance operations script
+        const result = await this.executeOperation(operation);
+
+        if (!result.success) {
+            throw new BalanceValidationError(result.error || 'Balance update failed');
+        }
+
+        return result.balance!;
+    }
+
+    async updateCreditLimit(dbprefix: string, amount: number, metadata?: Record<string, any>): Promise<Balance> {
+        // Create operation for credit limit update
+        const operation: BalanceOperation = {
+            id: uuidv4(),
+            dbprefix: dbprefix,
+            operationType: 'credit_limit_update' as any,
+            amount: amount,
+            timestamp: new Date(),
+            metadata
+        };
+
+        // Execute using the main balance operations script
+        const result = await this.executeOperation(operation);
+
+        if (!result.success) {
+            throw new BalanceValidationError(result.error || 'Credit limit update failed');
+        }
+
+        return result.balance!;
+    }
+
+    async deleteBalance(dbprefix: string, force: boolean = false): Promise<boolean> {
+        await this.ensureScriptsLoaded();
+
+        const balanceKey = this.getBalanceKey(dbprefix);
+        const auditKey = this.getAuditKey(dbprefix);
+        const timestamp = new Date().toISOString();
+        const operationId = uuidv4();
+
+        const result = await this.redis.evalsha(
+            this.deleteBalanceSha!,
+            2,
+            balanceKey,
+            auditKey,
+            operationId,
+            timestamp,
+            force ? "true" : "false"
+        ) as [boolean, string];
+
+        if (!result[0]) {
+            throw new BalanceValidationError(result[1]);
+        }
+
+        return true;
+    }
+
+    async forceDeleteBalance(dbprefix: string): Promise<boolean> {
+        return this.deleteBalance(dbprefix, true);
     }
 }
