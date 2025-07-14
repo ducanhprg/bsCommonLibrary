@@ -45,4 +45,24 @@ export interface BalanceRepositoryInterface {
      * Release balance lock
      */
     releaseLock(dbprefix: string, lockId: string): Promise<boolean>;
+
+    /**
+     * Update balance amounts (positive for add, negative for subtract)
+     */
+    updateBalance(dbprefix: string, amount: number, metadata?: Record<string, any>): Promise<Balance>;
+
+    /**
+     * Update credit limit (positive for add, negative for subtract)
+     */
+    updateCreditLimit(dbprefix: string, amount: number, metadata?: Record<string, any>): Promise<Balance>;
+
+    /**
+     * Delete balance for reinitialization
+     */
+    deleteBalance(dbprefix: string, force?: boolean): Promise<boolean>;
+
+    /**
+     * Force delete balance ignoring pending transactions
+     */
+    forceDeleteBalance(dbprefix: string): Promise<boolean>;
 }

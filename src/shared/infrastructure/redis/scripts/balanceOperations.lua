@@ -79,6 +79,30 @@ elseif operationType == "refund_payment" then
     newTotalFund = totalFund + amount
     newPending = pending - amount
 
+elseif operationType == "balance_deposit" then
+    -- Add to current and available balance
+    newCurrent = current + amount
+    newAvailable = available + amount
+    newTotalFund = newCurrent + creditLimit
+
+elseif operationType == "balance_withdrawal" then
+    -- Subtract from current and available balance
+    if current < amount then
+        return {false, "Insufficient balance", current}
+    end
+    newCurrent = current - amount
+    newAvailable = available - amount
+    newTotalFund = newCurrent + creditLimit
+
+elseif operationType == "credit_limit_update" then
+    -- Update credit limit and recalculate total fund available
+    local newCreditLimit = creditLimit + amount
+    if newCreditLimit < 0 then
+        return {false, "Credit limit cannot be negative", creditLimit}
+    end
+    creditLimit = newCreditLimit
+    newTotalFund = current + creditLimit
+
 else
     return {false, "Invalid operation type"}
 end
@@ -93,6 +117,7 @@ local newVersion = version + 1
 redis.call('HMSET', balanceKey,
     'current_balance', newCurrent,
     'available_balance', newAvailable,
+    'credit_limit', creditLimit,
     'total_fund_available', newTotalFund,
     'pending_transaction_amount', newPending,
     'version', newVersion,
