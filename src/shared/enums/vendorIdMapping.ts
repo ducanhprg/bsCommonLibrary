@@ -2,13 +2,13 @@ import { Vendors } from "./vendors";
 export enum VENDOR_IDS {
     VENDOR_GDE = 6,
     VENDOR_UPS = 100,
-    VENDOR_DHL = 111,
-    VENDOR_FEDEX = 9,
+    VENDOR_DHL = 9,
+    VENDOR_FEDEX = 10,
     VENDOR_SHIPSAVING = 7,
     VENDOR_DP = 2,
     VENDOR_FTD = 1,
-    VENDOR_PYLON = 8,
-    VENDOR_GDEB = 10,
+    VENDOR_PYLON = 11,
+    VENDOR_GDEB = 8,
     VENDOR_GDEC = 12
 }
 

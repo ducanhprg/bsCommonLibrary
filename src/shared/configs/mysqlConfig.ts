@@ -163,6 +163,26 @@ export const getTenantDataSource = async (vendorDatabase: string): Promise<DataS
   }
 };
 
+
+/**
+ * Checks if entities1 contains all entities from entities2 (by name)
+ * @param entities1 The container entities array
+ * @param entities2 The entities array to check if it's contained in entities1
+ * @returns true if entities1 contains all entities from entities2
+ */
+const entitiesContain = (entities1: any, entities2: any[]): boolean => {
+  // Convert to arrays if needed
+  const entities1Array = Array.isArray(entities1) ? entities1 : Object.values(entities1 || {});
+  const entities2Array = Array.isArray(entities2) ? entities2 : Object.values(entities2 || {});
+  
+  // Extract entity names
+  const names1 = entities1Array.map((entity: any) => entity.options?.name || entity.name || 'unknown');
+  const names2 = entities2Array.map((entity: any) => entity.options?.name || entity.name || 'unknown');
+  
+  // Check if names1 contains all names from names2
+  return names2.every(name2 => names1.includes(name2));
+};
+
 export const getTenantDataSourceWithEntities = async (vendorDatabase: string, entities: EntitySchema[]): Promise<DataSource> => {
   if (!vendorDatabase || typeof vendorDatabase !== 'string') {
     throw new Error('Invalid vendor database name');
