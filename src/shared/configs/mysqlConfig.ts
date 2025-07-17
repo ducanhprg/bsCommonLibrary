@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { DataSource, DataSourceOptions } from 'typeorm';
+import { DataSource, DataSourceOptions, EntitySchema } from 'typeorm';
 import { getDataByKey, setDataByKey } from '@shared/utils/RedisClient';
 
 const MAX_TENANT_CONNECTIONS = 50;
