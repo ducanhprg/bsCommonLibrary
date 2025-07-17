@@ -163,6 +163,100 @@ export const getTenantDataSource = async (vendorDatabase: string): Promise<DataS
   }
 };
 
+
+/**
+ * Checks if entities1 contains all entities from entities2 (by name)
+ * @param entities1 The container entities array
+ * @param entities2 The entities array to check if it's contained in entities1
+ * @returns true if entities1 contains all entities from entities2
+ */
+const entitiesContain = (entities1: any, entities2: any[]): boolean => {
+  // Convert to arrays if needed
+  const entities1Array = Array.isArray(entities1) ? entities1 : Object.values(entities1 || {});
+  const entities2Array = Array.isArray(entities2) ? entities2 : Object.values(entities2 || {});
+  
+  // Extract entity names
+  const names1 = entities1Array.map((entity: any) => entity.options?.name || entity.name || 'unknown');
+  const names2 = entities2Array.map((entity: any) => entity.options?.name || entity.name || 'unknown');
+  
+  // Check if names1 contains all names from names2
+  return names2.every(name2 => names1.includes(name2));
+};
+
+export const getTenantDataSourceWithEntities = async (vendorDatabase: string, entities: EntitySchema[]): Promise<DataSource> => {
+  if (!vendorDatabase || typeof vendorDatabase !== 'string') {
+    throw new Error('Invalid vendor database name');
+  }
+
+  try {
+    if (tenantConnections.has(vendorDatabase)) {
+      const existingDataSource = tenantConnections.get(vendorDatabase)!;
+      
+      // Check if existing entities contain all required entities
+      const containsAllEntities = entitiesContain(existingDataSource.options.entities || [], entities);
+      console.log('containsAllEntities', containsAllEntities);
+      
+      if (existingDataSource.isInitialized && await isConnectionHealthy(existingDataSource) && containsAllEntities) {
+        console.log(`[getTenantDataSourceWithEntities] Reusing existing connection for ${vendorDatabase}`);
+        updateLRUOrder(vendorDatabase);
+        await setDataByKey(`tenant-connection:${SERVICE_ID}:${vendorDatabase}`, 'active', 60);
+        return existingDataSource;
+      } else {
+        console.log(`[getTenantDataSourceWithEntities] Creating new connection for ${vendorDatabase} - entities mismatch or unhealthy connection`);
+        try {
+          await existingDataSource.destroy();
+        } catch (error: unknown) {
+          console.warn(`Failed to properly close unhealthy connection: ${(error as Error).message}`);
+        }
+        tenantConnections.delete(vendorDatabase);
+        const index = connectionLRU.indexOf(vendorDatabase);
+        if (index !== -1) {
+          connectionLRU.splice(index, 1);
+        }
+      }
+    }
+
+    if (tenantConnections.size >= MAX_TENANT_CONNECTIONS) {
+      await evictLeastRecentlyUsed();
+      if (tenantConnections.size >= SOFT_CONNECTION_LIMIT) {
+        console.warn(`Connection limit exceeded: ${tenantConnections.size} connections active`);
+      }
+    }
+
+    const configCacheKey = `tenant-config:${vendorDatabase}`;
+    const cachedDataSourceOptions = await getDataByKey(configCacheKey);
+    let dataSourceOptions: DataSourceOptions;
+
+    if (cachedDataSourceOptions) {
+      try {
+        dataSourceOptions = JSON.parse(cachedDataSourceOptions) as DataSourceOptions;
+        if(!entitiesContain(dataSourceOptions.entities, entities)) {
+          dataSourceOptions = { ...multiTenantBaseConfig, database: vendorDatabase, entities: entities };
+          await setDataByKey(configCacheKey, JSON.stringify(dataSourceOptions), 60 * 60 * 24);
+        }
+      } catch (error: unknown) {
+        console.error(`Invalid cached config for ${vendorDatabase}:`, error);
+        dataSourceOptions = { ...multiTenantBaseConfig, database: vendorDatabase, entities: entities };
+      }
+    } else {
+      dataSourceOptions = { ...multiTenantBaseConfig, database: vendorDatabase, entities: entities };
+      await setDataByKey(configCacheKey, JSON.stringify(dataSourceOptions), 60 * 60 * 24);
+    }
+
+    const dataSource = await initializeDataSourceWithRetry(dataSourceOptions, vendorDatabase);
+    console.log(`Service ${SERVICE_ID} connected to tenant database: ${vendorDatabase}`);
+    
+    tenantConnections.set(vendorDatabase, dataSource);
+    updateLRUOrder(vendorDatabase);
+    await setDataByKey(`tenant-connection:${SERVICE_ID}:${vendorDatabase}`, 'active', 60);
+    
+    return dataSource;
+  } catch (error: unknown) {
+    console.error(`Failed to initialize tenant ${vendorDatabase}:`, error);
+    throw error;
+  }
+};
+
 const refreshConnectionStatus = async (): Promise<void> => {
   try {
     const staleConnections: string[] = [];
