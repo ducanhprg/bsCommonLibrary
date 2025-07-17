@@ -187,11 +187,9 @@ export const getTenantDataSourceWithEntities = async (vendorDatabase: string, en
   if (!vendorDatabase || typeof vendorDatabase !== 'string') {
     throw new Error('Invalid vendor database name');
   }
-
   try {
     if (tenantConnections.has(vendorDatabase)) {
       const existingDataSource = tenantConnections.get(vendorDatabase)!;
-      
       // Check if existing entities contain all required entities
       const containsAllEntities = entitiesContain(existingDataSource.options.entities || [], entities);
       console.log('containsAllEntities', containsAllEntities);
@@ -229,11 +227,12 @@ export const getTenantDataSourceWithEntities = async (vendorDatabase: string, en
 
     if (cachedDataSourceOptions) {
       try {
-        dataSourceOptions = JSON.parse(cachedDataSourceOptions) as DataSourceOptions;
-        if(!entitiesContain(dataSourceOptions.entities, entities)) {
-          dataSourceOptions = { ...multiTenantBaseConfig, database: vendorDatabase, entities: entities };
-          await setDataByKey(configCacheKey, JSON.stringify(dataSourceOptions), 60 * 60 * 24);
-        }
+        const baseConfig = JSON.parse(cachedDataSourceOptions);
+        dataSourceOptions = { 
+          ...baseConfig, 
+          database: vendorDatabase, 
+          entities: entities
+        };
       } catch (error: unknown) {
         console.error(`Invalid cached config for ${vendorDatabase}:`, error);
         dataSourceOptions = { ...multiTenantBaseConfig, database: vendorDatabase, entities: entities };
