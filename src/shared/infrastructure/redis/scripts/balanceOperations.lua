@@ -83,7 +83,7 @@ elseif operationType == "balance_deposit" then
     -- Add to current and available balance
     newCurrent = current + amount
     newAvailable = available + amount
-    newTotalFund = newCurrent + creditLimit
+    newTotalFund = totalFund + amount
 
 elseif operationType == "balance_withdrawal" then
     -- Subtract from current and available balance
@@ -92,16 +92,14 @@ elseif operationType == "balance_withdrawal" then
     end
     newCurrent = current - amount
     newAvailable = available - amount
-    newTotalFund = newCurrent + creditLimit
+    newTotalFund = totalFund - amount
 
 elseif operationType == "credit_limit_update" then
     -- Update credit limit and recalculate total fund available
-    local newCreditLimit = creditLimit + amount
-    if newCreditLimit < 0 then
-        return {false, "Credit limit cannot be negative", creditLimit}
-    end
-    creditLimit = newCreditLimit
-    newTotalFund = current + creditLimit
+    local newCreditLimitDiff = amount - creditLimit
+
+    creditLimit = amount
+    newTotalFund = totalFund + newCreditLimitDiff
 
 else
     return {false, "Invalid operation type"}
@@ -109,7 +107,7 @@ end
 
 -- Validate new values
 if newTotalFund < 0 or newPending < 0 then
-    return {false, "Operation would result in negative balance"}
+    return {false, "Operation would result in negative Total Fund Available"}
 end
 
 -- Update balance with new version
