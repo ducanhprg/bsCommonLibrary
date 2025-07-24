@@ -92,10 +92,24 @@ export class BalanceService {
             throw new Error('Database prefix is required');
         }
 
-        const balance = await this.repository.getBalance(dbprefix);
+        let balance = await this.repository.getBalance(dbprefix);
         
         if (!balance) {
-            throw new Error(`Balance not found for user: ${dbprefix}`);
+            // Auto-initialize balance if it doesn't exist
+            if (!this.tenantDatabaseName || this.tenantDatabaseName.trim() === '') {
+                throw new Error(`Balance not found for user: ${dbprefix} and no tenant database name configured for initialization`);
+            }
+            
+            try {
+                await this.utilityService.initializeBalance(dbprefix, this.tenantDatabaseName);
+                balance = await this.repository.getBalance(dbprefix);
+                
+                if (!balance) {
+                    throw new Error('Balance not found after initialization');
+                }
+            } catch (error) {
+                throw new Error(`Failed to initialize balance: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            }
         }
 
         return balance;
@@ -108,16 +122,53 @@ export class BalanceService {
 
         this.utilityService.validateAmount(Math.abs(amount));
 
+        // Check if balance exists, initialize if needed
+        let existingBalance = await this.repository.getBalance(dbprefix);
+        if (!existingBalance) {
+            if (!this.tenantDatabaseName || this.tenantDatabaseName.trim() === '') {
+                throw new Error(`Balance not found for user: ${dbprefix} and no tenant database name configured for initialization`);
+            }
+            
+            try {
+                await this.utilityService.initializeBalance(dbprefix, this.tenantDatabaseName);
+                existingBalance = await this.repository.getBalance(dbprefix);
+                
+                if (!existingBalance) {
+                    throw new Error('Balance not found after initialization');
+                }
+            } catch (error) {
+                throw new Error(`Failed to initialize balance: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            }
+        }
+
         return await this.repository.updateBalance(dbprefix, amount, metadata);
     }
 
     async updateCreditLimit(dbprefix: string, amount: number, metadata?: Record<string, any>): Promise<Balance> {
-
         if (!dbprefix || dbprefix.trim() === '') {
             throw new Error('Database prefix is required');
         }
 
         this.utilityService.validateAmount(Math.abs(amount));
+        
+        // Check if balance exists, initialize if needed
+        let existingBalance = await this.repository.getBalance(dbprefix);
+        if (!existingBalance) {
+            if (!this.tenantDatabaseName || this.tenantDatabaseName.trim() === '') {
+                throw new Error(`Balance not found for user: ${dbprefix} and no tenant database name configured for initialization`);
+            }
+            
+            try {
+                await this.utilityService.initializeBalance(dbprefix, this.tenantDatabaseName);
+                existingBalance = await this.repository.getBalance(dbprefix);
+                
+                if (!existingBalance) {
+                    throw new Error('Balance not found after initialization');
+                }
+            } catch (error) {
+                throw new Error(`Failed to initialize balance: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            }
+        }
         
         return await this.repository.updateCreditLimit(dbprefix, amount, metadata);
     }

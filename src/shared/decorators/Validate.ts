@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { ExceptionHandler, ExceptionType } from '../exceptions/ExceptionHandler';
+import { ErrorManager, ErrorFactory } from '../exceptions/ErrorManager';
 import { MessageCode } from '../constants/messages';
 
 export interface ValidationRule {
@@ -132,13 +132,15 @@ export function Validate(rules: ValidationRule[], defaultSource: 'body' | 'query
                 }
 
                 if (Object.keys(errors).length > 0) {
-                    ExceptionHandler.throw(
-                        ExceptionType.VALIDATION,
+                    const errorManager = ErrorManager.getInstance();
+                    const validationError = ErrorFactory.validation(
                         MessageCode.VALIDATION_REQUIRED_FIELDS,
-                        undefined,
-                        { errors },
-                        'VALIDATION_ERROR'
+                        { errors }
                     );
+                    
+                    validationError.code = 'VALIDATION_ERROR';
+                    
+                    errorManager.throwException(validationError);
                 }
 
                 return originalMethod.apply(this, [req, res, next]);
