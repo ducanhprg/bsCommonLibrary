@@ -1,4 +1,4 @@
-import { getDataByHashKey, sscanKeys } from "@shared/utils/RedisClient";
+import { getDataByHashKey, sscanKeys, setDataByHashKey } from "@shared/utils/RedisClient";
 import { ParcelRequestItem } from "./ParcelRequestItem";
 import { redisKeys } from "@shared/constants/redisKeys";
 
@@ -101,6 +101,7 @@ export class PrintLabelRequest {
                 metaParcelRequestItem.parcel_request_id,
                 metaParcelRequestItem.input_package_service_option,
                 metaRateSearchItem.rate_search_id);
+            await setDataByHashKey('print_label_request:' + printLabelRequest.parcelRequestItemID, printLabelRequest.toRecord());
             return printLabelRequest;
         } else {
             console.log('Failed to get parcel request item from Redis');
