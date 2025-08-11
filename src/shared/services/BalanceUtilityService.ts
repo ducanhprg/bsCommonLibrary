@@ -9,6 +9,7 @@ import { BalanceRepositoryInterface } from '@shared/domain/interfaces/BalanceRep
 import { getTenantDataSource } from '@shared/configs/mysqlConfig';
 import { AccountBalanceInterface, createAccountBalanceEntity } from '@shared/database/multi-tenant/entities/AccountBalance';
 import { AccountLedgerInterface, createAccountLedgerEntity } from '@shared/database/multi-tenant/entities/AccountLedger';
+import { Logger } from '@shared/logging/Logger';
 
 export class BalanceUtilityService {
     private repository: BalanceRepositoryInterface;
@@ -25,31 +26,67 @@ export class BalanceUtilityService {
     }
 
     async initializeBalance(dbprefix: string, database: string): Promise<Balance> {
-        const balanceInfo = await this.getAccountLatestOpeningBalance(dbprefix, database);
+        let balanceInfo;
+        try {
+            balanceInfo = await this.getAccountLatestOpeningBalance(dbprefix, database);
+        } catch (error) {
+            Logger.error(`[BalanceUtilityService] Error fetching opening balance for ${dbprefix}:`, error);
+            throw new Error(`Failed to fetch opening balance for account ${dbprefix}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
         
         if (!balanceInfo) {
-            throw new Error('No opening balance found for the account');
+            Logger.error(`[BalanceUtilityService] No opening balance record found for account: ${dbprefix}`);
+            throw new Error(`No opening balance found for account: ${dbprefix}. Please ensure the account has been properly set up with an opening balance record.`);
         }
 
         // Get total credit and debit amounts for all transactions after the report_date
-        const creditAmount = await this.getTransactionSumAfterDate('cr', balanceInfo.report_date, balanceInfo.customer_branch_id, dbprefix, database) || 0;
-        const debitAmount = await this.getTransactionSumAfterDate('db', balanceInfo.report_date, balanceInfo.customer_branch_id, dbprefix, database) || 0;
+        let creditAmount = 0;
+        let debitAmount = 0;
+        
+        try {
+            creditAmount = await this.getTransactionSumAfterDate('cr', balanceInfo.report_date, balanceInfo.customer_branch_id, dbprefix, database) || 0;
+        } catch (error) {
+            Logger.error(`[BalanceUtilityService] Error fetching credit transactions for ${dbprefix}:`, error);
+            throw new Error(`Failed to calculate credit transactions for account ${dbprefix}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+        
+        try {
+            debitAmount = await this.getTransactionSumAfterDate('db', balanceInfo.report_date, balanceInfo.customer_branch_id, dbprefix, database) || 0;
+        } catch (error) {
+            Logger.error(`[BalanceUtilityService] Error fetching debit transactions for ${dbprefix}:`, error);
+            throw new Error(`Failed to calculate debit transactions for account ${dbprefix}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
 
         // Calculate final balance: opening_balance - credit + debit
         const finalBalance = balanceInfo.opening_balance - creditAmount + debitAmount;
+        
+        // Validate calculated balance
+        if (isNaN(finalBalance) || !isFinite(finalBalance)) {
+            Logger.error(`[BalanceUtilityService] Invalid calculated balance for ${dbprefix}:`, {
+                openingBalance: balanceInfo.opening_balance,
+                creditAmount,
+                debitAmount,
+                calculatedBalance: finalBalance
+            });
+            throw new Error(`Invalid balance calculation result: ${finalBalance}. Please check opening balance and transaction data.`);
+        }
+
+        const totalFundAvailable = finalBalance + balanceInfo.credit_limit;
 
         const balance: Balance = {
             dbprefix: dbprefix,
             currentBalance: finalBalance,
             availableBalance: finalBalance,
             creditLimit: balanceInfo.credit_limit,
-            totalFundAvailable: finalBalance + balanceInfo.credit_limit,
+            totalFundAvailable: totalFundAvailable,
             pendingTransactionAmount: 0,
             version: 0,
             lastUpdated: new Date()
         };
 
-        return await this.repository.createBalance(balance);
+        const createdBalance = await this.repository.createBalance(balance);
+        
+        return createdBalance;
     }
 
     async getBalance(dbprefix: string): Promise<Balance> {
@@ -168,8 +205,13 @@ export class BalanceUtilityService {
                 customer_branch_id: record.customerBranchId
             };
         } catch (error) {
-            console.error('Error fetching account latest opening balance:', error);
-            throw new Error(`Failed to fetch account opening balance: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            Logger.error(`[BalanceUtilityService] Database error fetching opening balance:`, {
+                dbprefix,
+                database,
+                tableName: `${dbprefix}account_balance`,
+                error: error instanceof Error ? error.message : 'Unknown error'
+            });
+            throw error;
         }
     }
 
@@ -203,7 +245,7 @@ export class BalanceUtilityService {
 
             return parseFloat(result?.total) || 0;
         } catch (error) {
-            console.error('Error fetching transaction sum by date:', error);
+            Logger.error('Error fetching transaction sum by date:', error);
             throw new Error(`Failed to fetch transaction sum: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
     }
@@ -219,19 +261,27 @@ export class BalanceUtilityService {
             const { accountLedgerRepo } = await this.getRepositories(dbprefix, database);
 
             // Use QueryBuilder for complex aggregation with date filtering
-            const result = await accountLedgerRepo
+            const query = accountLedgerRepo
                 .createQueryBuilder('ledger')
                 .select('COALESCE(SUM(ledger.amount), 0)', 'total')
                 .where('ledger.customerBranchId = :customerBranchId', { customerBranchId: parseInt(customerBranchId) })
                 .andWhere('ledger.crdb = :crdb', { crdb })
                 .andWhere('ledger.trxDate > :date', { date })
-                .andWhere('ledger.status = :status', { status: '1' })
-                .getRawOne();
+                .andWhere('ledger.status = :status', { status: '1' });
+            
+            const result = await query.getRawOne();
+            const total = parseFloat(result?.total) || 0;
 
-            return parseFloat(result?.total) || 0;
+            return total;
         } catch (error) {
-            console.error('Error fetching transaction sum after date:', error);
-            throw new Error(`Failed to fetch transaction sum: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            Logger.error(`[BalanceUtilityService] Database error fetching ${crdb === 'cr' ? 'credit' : 'debit'} transaction sum:`, {
+                customerBranchId,
+                dbprefix,
+                database,
+                tableName: `${dbprefix}account_ledger`,
+                error: error instanceof Error ? error.message : 'Unknown error'
+            });
+            throw error;
         }
     }
 }
