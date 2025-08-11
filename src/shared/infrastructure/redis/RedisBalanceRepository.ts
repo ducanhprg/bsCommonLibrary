@@ -11,6 +11,7 @@ import {
 } from '@shared/domain/entities/Balance';
 import { BalanceRepositoryInterface } from '@shared/domain/interfaces/BalanceRepositoryInterface';
 import { redisKeys } from '@shared/constants/redisKeys';
+import { Logger } from '@shared/logging/Logger';
 
 export class RedisBalanceRepository implements BalanceRepositoryInterface {
     private redis: Redis;
@@ -47,7 +48,7 @@ export class RedisBalanceRepository implements BalanceRepositoryInterface {
                 'utf8'
             );
         } catch (error) {
-            console.warn('Could not load Lua scripts from files, falling back to inline scripts:', error);
+            Logger.warn('Could not load Lua scripts from files, falling back to inline scripts:', error);
             // Fallback to inline scripts if file loading fails
             this.loadInlineScripts();
         }
@@ -185,19 +186,27 @@ export class RedisBalanceRepository implements BalanceRepositoryInterface {
             -- Create Balance Lua Script (inline version)
             local balanceKey = KEYS[1]
             local username = ARGV[1]
-            local currentBalance = tonumber(ARGV[2]) or 0
-            local availableBalance = tonumber(ARGV[3]) or 0
-            local creditLimit = tonumber(ARGV[4]) or 0
-            local totalFundAvailable = tonumber(ARGV[5]) or 0
-            local pendingTransactionAmount = tonumber(ARGV[6]) or 0
+            local currentBalance = tonumber(ARGV[2])
+            local availableBalance = tonumber(ARGV[3])
+            local creditLimit = tonumber(ARGV[4])
+            local totalFundAvailable = tonumber(ARGV[5])
+            local pendingTransactionAmount = tonumber(ARGV[6])
             local timestamp = ARGV[7]
+            
+            -- Validate that all numbers were parsed correctly
+            if currentBalance == nil then currentBalance = 0 end
+            if availableBalance == nil then availableBalance = 0 end
+            if creditLimit == nil then creditLimit = 0 end
+            if totalFundAvailable == nil then totalFundAvailable = 0 end
+            if pendingTransactionAmount == nil then pendingTransactionAmount = 0 end
 
+            -- For balance reset, delete existing balance if it exists
             if redis.call('EXISTS', balanceKey) == 1 then
-                return {false, "Balance already exists"}
+                redis.call('DEL', balanceKey)
             end
 
             redis.call('HMSET', balanceKey,
-                'username', username,
+                'dbprefix', username,
                 'current_balance', currentBalance,
                 'available_balance', availableBalance,
                 'credit_limit', creditLimit,
@@ -206,15 +215,16 @@ export class RedisBalanceRepository implements BalanceRepositoryInterface {
                 'version', 1,
                 'last_updated', timestamp)
 
-            return {true, {
-                username = username,
-                current_balance = currentBalance,
-                available_balance = availableBalance,
-                credit_limit = creditLimit,
-                total_fund_available = totalFundAvailable,
-                pending_transaction_amount = pendingTransactionAmount,
-                version = 1,
-                last_updated = timestamp
+            -- Return using simple array approach that definitely works with ioredis
+            return {1, {
+                username,
+                tostring(currentBalance),
+                tostring(availableBalance),
+                tostring(creditLimit),
+                tostring(totalFundAvailable),
+                tostring(pendingTransactionAmount),
+                '1',
+                timestamp
             }}
         `;
 
@@ -282,7 +292,6 @@ export class RedisBalanceRepository implements BalanceRepositoryInterface {
     private async ensureScriptsLoaded(): Promise<void> {
         try {
             if (!this.balanceOperationSha) {
-                // Use the correct ioredis method to load scripts
                 this.balanceOperationSha = await this.redis.call('SCRIPT', 'LOAD', this.balanceOperationScript) as string;
             }
             if (!this.createBalanceSha) {
@@ -292,7 +301,7 @@ export class RedisBalanceRepository implements BalanceRepositoryInterface {
                 this.deleteBalanceSha = await this.redis.call('SCRIPT', 'LOAD', this.deleteBalanceScript) as string;
             }
         } catch (error) {
-            console.error('Failed to load Lua scripts:', error);
+            Logger.error('Failed to load Lua scripts:', error);
             throw new Error('Failed to initialize Redis scripts');
         }
     }
@@ -310,16 +319,41 @@ export class RedisBalanceRepository implements BalanceRepositoryInterface {
     }
 
     private parseBalance(data: Record<string, string>): Balance {
+        const currentBalance = this.parseFloat(data.current_balance);
+        const availableBalance = this.parseFloat(data.available_balance);
+        const creditLimit = this.parseFloat(data.credit_limit);
+        const totalFundAvailable = this.parseFloat(data.total_fund_available);
+        const pendingTransactionAmount = this.parseFloat(data.pending_transaction_amount);
+        
+        // Validate parsed values for potential issues
+        if (isNaN(currentBalance) || isNaN(availableBalance) || isNaN(totalFundAvailable)) {
+            Logger.warn('[RedisBalanceRepository] Invalid balance values detected:', {
+                dbprefix: data.dbprefix,
+                currentBalance,
+                availableBalance,
+                totalFundAvailable,
+                rawData: data
+            });
+        }
+        
         return {
             dbprefix: data.dbprefix,
-            currentBalance: parseFloat(data.current_balance) || 0,
-            availableBalance: parseFloat(data.available_balance) || 0,
-            creditLimit: parseFloat(data.credit_limit) || 0,
-            totalFundAvailable: parseFloat(data.total_fund_available) || 0,
-            pendingTransactionAmount: parseFloat(data.pending_transaction_amount) || 0,
+            currentBalance,
+            availableBalance,
+            creditLimit,
+            totalFundAvailable,
+            pendingTransactionAmount,
             version: parseInt(data.version) || 0,
             lastUpdated: new Date(data.last_updated)
         };
+    }
+    
+    private parseFloat(value: string): number {
+        if (value === undefined || value === null || value === '') {
+            return 0;
+        }
+        const parsed = parseFloat(value);
+        return isNaN(parsed) ? 0 : parsed;
     }
 
     async getBalance(dbprefix: string): Promise<Balance | null> {
@@ -339,10 +373,7 @@ export class RedisBalanceRepository implements BalanceRepositoryInterface {
         const balanceKey = this.getBalanceKey(balance.dbprefix);
         const timestamp = new Date().toISOString();
 
-        const result = await this.redis.evalsha(
-            this.createBalanceSha!,
-            1,
-            balanceKey,
+        const args = [
             balance.dbprefix,
             balance.currentBalance.toString(),
             balance.availableBalance.toString(),
@@ -350,10 +381,47 @@ export class RedisBalanceRepository implements BalanceRepositoryInterface {
             balance.totalFundAvailable.toString(),
             balance.pendingTransactionAmount.toString(),
             timestamp
+        ];
+
+        const result = await this.redis.evalsha(
+            this.createBalanceSha!,
+            1,
+            balanceKey,
+            ...args
         ) as [boolean, any];
 
         if (!result[0]) {
+            Logger.error('[RedisBalanceRepository] Lua script failed to create balance:', {
+                error: result[1],
+                dbprefix: balance.dbprefix,
+                balanceKey
+            });
             throw new BalanceValidationError(result[1]);
+        }
+
+        // Handle array format from Lua script
+        if (Array.isArray(result[1])) {
+            const data = {
+                dbprefix: result[1][0],
+                current_balance: result[1][1],
+                available_balance: result[1][2],
+                credit_limit: result[1][3],
+                total_fund_available: result[1][4],
+                pending_transaction_amount: result[1][5],
+                version: result[1][6],
+                last_updated: result[1][7]
+            };
+            return this.parseBalance(data);
+        }
+
+        // Handle unexpected result format
+        if (!result[1] || (typeof result[1] === 'object' && Object.keys(result[1]).length === 0)) {
+            Logger.error('[RedisBalanceRepository] Lua script returned empty result:', {
+                result,
+                dbprefix: balance.dbprefix,
+                balanceKey
+            });
+            throw new BalanceValidationError('Lua script returned empty balance data');
         }
 
         return this.parseBalance(result[1]);
