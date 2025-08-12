@@ -149,7 +149,7 @@ export class BalanceService {
             throw new Error('Database prefix is required');
         }
 
-        this.utilityService.validateAmount(Math.abs(amount));
+        this.utilityService.validateAmount(Math.abs(amount), true); // Allow zero for credit limit updates
         
         // Check if balance exists, initialize if needed
         let existingBalance = await this.repository.getBalance(dbprefix);
