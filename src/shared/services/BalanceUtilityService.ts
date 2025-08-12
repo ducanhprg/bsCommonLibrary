@@ -136,8 +136,8 @@ export class BalanceUtilityService {
         throw new Error('Credit limit updates require a separate implementation');
     }
 
-    validateAmount(amount: number): void {
-        if (amount <= 0) {
+    validateAmount(amount: number, allowZero = false): void {
+        if (amount < 0 || (!allowZero && amount === 0)) {
             throw new BalanceValidationError('Amount must be positive');
         }
         if (!Number.isFinite(amount)) {
