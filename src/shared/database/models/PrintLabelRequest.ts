@@ -100,7 +100,9 @@ export class PrintLabelRequest {
                 printLabelRequest.rateSearchID,
                 metaParcelRequestItem.parcel_request_id,
                 metaParcelRequestItem.input_package_service_option,
-                metaRateSearchItem.rate_search_id);
+                metaRateSearchItem.rate_search_id,
+                metaParcelRequestItem.address_clarification
+            );
             await setDataByHashKey('print_label_request:' + printLabelRequest.parcelRequestItemID, printLabelRequest.toRecord());
             return printLabelRequest;
         } else {

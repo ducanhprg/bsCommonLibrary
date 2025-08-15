@@ -146,8 +146,9 @@ export class ParcelRequestItem {
     customerReference!: CustomerReference;
     packageContent!: PackageContent[];
     packageServiceOptions!: PackageServiceOptions[];
+    address_clarification!: string;
 
-    constructor(shipTo: any, shipFrom: any, parcelSize: any, shippingLane: any, customerReference: any, packageContent: any[], id: string, rateSearchId: string, parcelRequestId: string, packageServiceOptions: any, rateSearchItemId : string) { 
+    constructor(shipTo: any, shipFrom: any, parcelSize: any, shippingLane: any, customerReference: any, packageContent: any[], id: string, rateSearchId: string, parcelRequestId: string, packageServiceOptions: any, rateSearchItemId : string, address_clarification: string) { 
       this.shipTo = JSON.parse(shipTo);
       this.shipFrom = JSON.parse(shipFrom);
       this.parcelSize = JSON.parse(parcelSize);
@@ -167,6 +168,7 @@ export class ParcelRequestItem {
         this.packageServiceOptions = [];
       }
       this.rateSearchItemId = rateSearchItemId;
+      this.address_clarification = address_clarification;
     }
   }
   
