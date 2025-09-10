@@ -39,5 +39,5 @@ export const logVendorAPIRequest = (requestId: string, request: LogVendorAPIRequ
         },
         "timestamp": new Date().toISOString()
     }
-    Logger.debug(JSON.stringify(log));
+    console.log(JSON.stringify(log));
 }
