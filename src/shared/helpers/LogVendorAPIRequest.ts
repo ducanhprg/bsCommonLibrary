@@ -10,17 +10,11 @@ interface LogVendorAPIRequest {
         body: any;
         params?: any;
     };
-    vendor_response: {
-        status_code: any;
-        error: {
-            code: any;
-            message: any;
-        };
-    };
+    vendor_response: any;
     timestamp: any;
 }
 
-export const logVendorAPIRequest = (requestId: string, request: LogVendorAPIRequest["request_api_content"], responseAxiosResponse : AxiosResponse) => {
+export const logVendorAPIRequest = (requestId: string, request: LogVendorAPIRequest["request_api_content"], responseAxiosResponse : any) => {
     const log = {
         "request_id": requestId,
         "request_api_content": {
@@ -30,14 +24,8 @@ export const logVendorAPIRequest = (requestId: string, request: LogVendorAPIRequ
           "body": request.body,
           "params": request.params ? request.params : null
         },
-        "vendor_response": {
-          "status_code": responseAxiosResponse.status ? responseAxiosResponse.status : null,
-          "error": {
-            "code": responseAxiosResponse.status ? responseAxiosResponse.status : null,
-            "message": responseAxiosResponse.data ? responseAxiosResponse.data.Message : null
-          }
-        },
+        "vendor_response": responseAxiosResponse,
         "timestamp": new Date().toISOString()
     }
-    console.log(JSON.stringify(log));
+    Logger.debug(JSON.stringify(log));
 }
