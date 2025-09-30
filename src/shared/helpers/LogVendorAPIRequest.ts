@@ -27,5 +27,5 @@ export const logVendorAPIRequest = (requestId: string, request: LogVendorAPIRequ
         "vendor_response": responseAxiosResponse,
         "timestamp": new Date().toISOString()
     }
-    Logger.debug(JSON.stringify(log));
+    console.log(JSON.stringify(log));
 }
