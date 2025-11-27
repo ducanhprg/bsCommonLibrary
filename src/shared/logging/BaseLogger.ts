@@ -21,8 +21,8 @@ winston.addColors(colors);
 
 const format = winston.format.combine(
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss:ms' }),
+  winston.format.metadata({ fillExcept: ['message', 'level', 'timestamp'] }),
   winston.format.colorize({ all: true }),
-  winston.format.metadata(),
   winston.format.printf(
     (info) => {
       const metadata = info.metadata as { requestId?: string };
