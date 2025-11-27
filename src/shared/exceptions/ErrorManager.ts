@@ -176,6 +176,18 @@ export class ErrorManager {
         });
     }
 
+    logInfo(message: string, context?: Record<string, any>): void {
+        console.info(message, context);
+    }
+
+    logDebug(message: string, context?: Record<string, any>): void {
+        console.debug(message, context);
+    }
+
+    logWarn(message: string, context?: Record<string, any>): void {
+        console.warn(message, context);
+    }
+
     createFailureResult<T>(error: ErrorDetails): Result<T, ErrorDetails> {
         this.logError(error);
         return {
