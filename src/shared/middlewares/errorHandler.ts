@@ -17,7 +17,22 @@ export const errorHandler = (error: any, req: Request, res: Response, next: Next
         url: req.url,
         method: req.method
     });
-    
+
+    // Handle JSON parsing errors from express.json() middleware
+    if (error instanceof SyntaxError && (error as any).status === 400 && 'body' in error) {
+        res.status(400).json({
+            status: false,
+            message: 'Invalid JSON format in request body',
+            error: {
+                code: 'INVALID_JSON',
+                details: {
+                    message: error.message
+                }
+            }
+        });
+        return;
+    }
+
     // Handle BaseException and its derivatives
     if (error instanceof BaseException) {
         res.status(error.statusCode).json({
