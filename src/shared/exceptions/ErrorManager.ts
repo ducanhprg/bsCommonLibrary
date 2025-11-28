@@ -1,4 +1,5 @@
 import { ExceptionHandler, ExceptionType } from './ExceptionHandler';
+import { RocketChatNotifier } from '@shared/integrations/RocketChatNotifier';
 
 export type Result<T, E = Error> = {
     success: true;
@@ -9,6 +10,12 @@ export type Result<T, E = Error> = {
     message: string;
     context?: Record<string, any>;
 };
+
+export interface LogMessage {
+    message: string;
+    context?: Record<string, any>;
+    sendAlert?: boolean;
+}
 
 export enum ErrorType {
     VALIDATION = 'validation',
@@ -34,43 +41,47 @@ export interface ErrorDetails {
     cause?: Error;
     timestamp: Date;
     severity: 'low' | 'medium' | 'high' | 'critical';
+    sendAlert?: boolean;
 }
 
 export class ErrorFactory {
-    static validation(message: string, context?: Record<string, any>): ErrorDetails {
+    static validation(message: string, context?: Record<string, any>, sendAlert?: boolean): ErrorDetails {
         return {
             type: ErrorType.VALIDATION,
             code: 'VALIDATION_ERROR',
             message,
             context,
             timestamp: new Date(),
-            severity: 'medium'
+            severity: 'medium',
+            sendAlert
         };
     }
 
-    static notFound(resource: string, context?: Record<string, any>): ErrorDetails {
+    static notFound(resource: string, context?: Record<string, any>, sendAlert?: boolean): ErrorDetails {
         return {
             type: ErrorType.NOT_FOUND,
             code: 'RESOURCE_NOT_FOUND',
             message: `${resource} not found`,
             context,
             timestamp: new Date(),
-            severity: 'medium'
+            severity: 'medium',
+            sendAlert
         };
     }
 
-    static businessRule(message: string, context?: Record<string, any>): ErrorDetails {
+    static businessRule(message: string, context?: Record<string, any>, sendAlert?: boolean): ErrorDetails {
         return {
             type: ErrorType.BUSINESS_RULE,
             code: 'BUSINESS_RULE_VIOLATION',
             message,
             context,
             timestamp: new Date(),
-            severity: 'high'
+            severity: 'high',
+            sendAlert
         };
     }
 
-    static system(message: string, cause?: Error, context?: Record<string, any>): ErrorDetails {
+    static system(message: string, cause?: Error, context?: Record<string, any>, sendAlert?: boolean): ErrorDetails {
         return {
             type: ErrorType.SYSTEM,
             code: 'SYSTEM_ERROR',
@@ -78,73 +89,80 @@ export class ErrorFactory {
             cause,
             context,
             timestamp: new Date(),
-            severity: 'critical'
+            severity: 'critical',
+            sendAlert
         };
     }
 
-    static vendorService(service: string, message: string, context?: Record<string, any>): ErrorDetails {
+    static vendorService(service: string, message: string, context?: Record<string, any>, sendAlert?: boolean): ErrorDetails {
         return {
             type: ErrorType.VENDOR_SERVICE,
             code: 'EXTERNAL_SERVICE_ERROR',
             message: `${service}: ${message}`,
             context,
             timestamp: new Date(),
-            severity: 'high'
+            severity: 'high',
+            sendAlert
         };
     }
 
-    static databaseConnection(message: string, context?: Record<string, any>): ErrorDetails {
+    static databaseConnection(message: string, context?: Record<string, any>, sendAlert?: boolean): ErrorDetails {
         return {
             type: ErrorType.DATABASE_CONNECTION,
             code: 'DATABASE_CONNECTION_ERROR',
             message,
             context,
             timestamp: new Date(),
-            severity: 'critical'
+            severity: 'critical',
+            sendAlert
         };
     }
 
-    static databaseNotExists(database: string, context?: Record<string, any>): ErrorDetails {
+    static databaseNotExists(database: string, context?: Record<string, any>, sendAlert?: boolean): ErrorDetails {
         return {
             type: ErrorType.DATABASE_NOT_EXISTS,
             code: 'DATABASE_NOT_EXISTS',
             message: `Database '${database}' does not exist`,
             context,
             timestamp: new Date(),
-            severity: 'high'
+            severity: 'high',
+            sendAlert
         };
     }
 
-    static tableNotExists(table: string, context?: Record<string, any>): ErrorDetails {
+    static tableNotExists(table: string, context?: Record<string, any>, sendAlert?: boolean): ErrorDetails {
         return {
             type: ErrorType.TABLE_NOT_EXISTS,
             code: 'TABLE_NOT_EXISTS',
             message: `Table '${table}' does not exist`,
             context,
             timestamp: new Date(),
-            severity: 'high'
+            severity: 'high',
+            sendAlert
         };
     }
 
-    static insufficientFunds(message: string, context?: Record<string, any>): ErrorDetails {
+    static insufficientFunds(message: string, context?: Record<string, any>, sendAlert?: boolean): ErrorDetails {
         return {
             type: ErrorType.INSUFFICIENT_FUNDS,
             code: 'INSUFFICIENT_FUNDS',
             message,
             context,
             timestamp: new Date(),
-            severity: 'medium'
+            severity: 'medium',
+            sendAlert
         };
     }
 
-    static invalidOperation(message: string, context?: Record<string, any>): ErrorDetails {
+    static invalidOperation(message: string, context?: Record<string, any>, sendAlert?: boolean): ErrorDetails {
         return {
             type: ErrorType.INVALID_OPERATION,
             code: 'INVALID_OPERATION',
             message,
             context,
             timestamp: new Date(),
-            severity: 'medium'
+            severity: 'medium',
+            sendAlert
         };
     }
 }
@@ -174,18 +192,50 @@ export class ErrorManager {
                 console.error('Logger failed:', logError);
             }
         });
+
+        // Send to RocketChat if critical or sendAlert flag is true
+        if (error.severity === 'critical' || error.sendAlert === true) {
+            RocketChatNotifier.sendAlert('error', error.message, error.context, error);
+        }
     }
 
-    logInfo(message: string, context?: Record<string, any>): void {
-        console.info(message, context);
+    logInfo(message: string | LogMessage, context?: Record<string, any>): void {
+        if (typeof message === 'string') {
+            console.info(message, context);
+        } else {
+            console.info(message.message, message.context);
+
+            // Send to RocketChat if sendAlert flag is true
+            if (message.sendAlert === true) {
+                RocketChatNotifier.sendAlert('info', message.message, message.context);
+            }
+        }
     }
 
-    logDebug(message: string, context?: Record<string, any>): void {
-        console.debug(message, context);
+    logDebug(message: string | LogMessage, context?: Record<string, any>): void {
+        if (typeof message === 'string') {
+            console.debug(message, context);
+        } else {
+            console.debug(message.message, message.context);
+
+            // Send to RocketChat if sendAlert flag is true
+            if (message.sendAlert === true) {
+                RocketChatNotifier.sendAlert('debug', message.message, message.context);
+            }
+        }
     }
 
-    logWarn(message: string, context?: Record<string, any>): void {
-        console.warn(message, context);
+    logWarn(message: string | LogMessage, context?: Record<string, any>): void {
+        if (typeof message === 'string') {
+            console.warn(message, context);
+        } else {
+            console.warn(message.message, message.context);
+
+            // Send to RocketChat if sendAlert flag is true
+            if (message.sendAlert === true) {
+                RocketChatNotifier.sendAlert('warn', message.message, message.context);
+            }
+        }
     }
 
     createFailureResult<T>(error: ErrorDetails): Result<T, ErrorDetails> {
