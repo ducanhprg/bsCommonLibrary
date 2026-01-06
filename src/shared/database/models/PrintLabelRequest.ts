@@ -43,7 +43,12 @@ export class PrintLabelRequest {
             database: customer.database,
             dbprefix: customer.dbprefix,
             firmname: customer.firmname,
-            display_firmname: customer.display_firmname
+            display_firmname: customer.display_firmname,
+            address_1: customer.address_1,
+            city: customer.city,
+            state: customer.state,
+            zip: customer.zip,
+            display_addr: customer.display_addr
         };
         let keyParcelRequestItem = this.generateKey(redisKeys.REDIS_KEY_PARCEL_REQUEST_ITEM, printLabelRequest.parcelRequestItemID);
         let keyRateSearch = this.generateKey(redisKeys.REDIS_KEY_RATE_SEARCH, printLabelRequest.rateSearchID);
