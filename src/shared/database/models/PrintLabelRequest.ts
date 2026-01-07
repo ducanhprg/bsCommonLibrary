@@ -45,8 +45,10 @@ export class PrintLabelRequest {
             firmname: customer.firmname,
             display_firmname: customer.display_firmname,
             address_1: customer.address_1,
+            address_2: customer.address_2,
             city: customer.city,
             state: customer.state,
+            country: customer.country,
             zip: customer.zip,
             display_addr: customer.display_addr
         };
