@@ -52,5 +52,55 @@ export class VendorService {
 		} catch ( error ) {
 			console.error('Error publishing to exchange:', error);
 		} 
-	}
+  }
+  
+
+  /**
+   * Publish failure to plRequestHandler's vendor failure retry queue.
+   * plRequestHandler will attempt retry with next vendor (no consolidator).
+   */
+  public static async publishToVendorFailureQueue(
+    requestId: string,
+    parcelRequestItemId: string,
+    vendorId: number,
+    error: string,
+    vendorName: string,
+    customer: {
+      customer_branch_id: number;
+      customer_master_id: number;
+      dbprefix: string;
+      database: string;
+      pcode?: string;
+      firmname?: string;
+      display_firmname?: string;
+      address_1?: string;
+      address_2?: string;
+      city?: string;
+      state?: string;
+      country?: string;
+      zip?: string;
+      display_addr?: string;
+    },
+    rateSearchItemId?: string,
+    rateSearchId?: string
+  ) {
+    try {
+      const exchangeName = ExchangeNames.VENDOR_REQUESTS;
+      const routingKey = `${vendorName}.failure`;
+      const messageContent = JSON.stringify({
+        parcelRequestItemId,
+        vendorId,
+        error,
+        requestId,
+        rateSearchItemId,
+        rateSearchId,
+        customer,
+      });
+      await RabbitMQClient.publish(exchangeName, routingKey, messageContent);
+      console.log(`[x] Sent failure to vendor retry queue for parcel ${parcelRequestItemId}`);
+    } catch (err) {
+      console.error('Error publishing to vendor failure queue:', err);
+    }
+  }
+
 }
